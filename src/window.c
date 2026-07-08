@@ -18,6 +18,9 @@ static void action_rename(GSimpleAction *action, GVariant *parameter, gpointer u
 static void action_delete(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 static void action_toggle_sidebar(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 static void action_toggle_preview(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_zoom_in(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_zoom_out(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_zoom_reset(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 static void action_focus_mode(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 static void action_close_tab(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 static void action_close_other_tabs(GSimpleAction *action, GVariant *parameter, gpointer user_data);
@@ -51,6 +54,9 @@ static const GActionEntry app_actions[] = {
     {.name = "delete", .activate = action_delete},
     {.name = "toggle-sidebar", .activate = action_toggle_sidebar},
     {.name = "toggle-preview", .activate = action_toggle_preview},
+    {.name = "zoom-in", .activate = action_zoom_in},
+    {.name = "zoom-out", .activate = action_zoom_out},
+    {.name = "zoom-reset", .activate = action_zoom_reset},
     {.name = "focus-mode", .activate = action_focus_mode},
     {.name = "close-tab", .activate = action_close_tab},
     {.name = "close-other-tabs", .activate = action_close_other_tabs},
@@ -127,6 +133,9 @@ create_menu_model(void)
 
     g_menu_append(view, "Toggle Sidebar", "app.toggle-sidebar");
     g_menu_append(view, "Toggle Preview", "app.toggle-preview");
+    g_menu_append(view, "Zoom In", "app.zoom-in");
+    g_menu_append(view, "Zoom Out", "app.zoom-out");
+    g_menu_append(view, "Reset Zoom", "app.zoom-reset");
     g_menu_append(view, "Focus Mode", "app.focus-mode");
 
     g_menu_append(help, "About", "app.about");
@@ -174,6 +183,20 @@ set_accels(LmmeApp *app)
     gtk_application_set_accels_for_action(app->gtk_app, "app.italic", (const char *[]){"<Ctrl>I", NULL});
     gtk_application_set_accels_for_action(app->gtk_app, "app.insert-link", (const char *[]){"<Ctrl>K", NULL});
     gtk_application_set_accels_for_action(app->gtk_app, "app.toggle-preview", (const char *[]){"<Ctrl>P", NULL});
+    gtk_application_set_accels_for_action(app->gtk_app,
+                                          "app.zoom-in",
+                                          (const char *[]){"<Ctrl>plus",
+                                                           "<Ctrl>equal",
+                                                           "<Ctrl><Shift>plus",
+                                                           "<Ctrl><Shift>equal",
+                                                           "<Ctrl>KP_Add",
+                                                           NULL});
+    gtk_application_set_accels_for_action(app->gtk_app,
+                                          "app.zoom-out",
+                                          (const char *[]){"<Ctrl>minus", "<Ctrl>KP_Subtract", NULL});
+    gtk_application_set_accels_for_action(app->gtk_app,
+                                          "app.zoom-reset",
+                                          (const char *[]){"<Ctrl>0", "<Ctrl>KP_0", NULL});
     gtk_application_set_accels_for_action(app->gtk_app, "app.focus-mode", (const char *[]){"F11", NULL});
     gtk_application_set_accels_for_action(app->gtk_app, "app.next-tab", (const char *[]){"<Ctrl>Tab", NULL});
     gtk_application_set_accels_for_action(app->gtk_app, "app.previous-tab", (const char *[]){"<Ctrl><Shift>Tab", NULL});
@@ -404,6 +427,7 @@ void
 lmme_window_build(LmmeApp *app)
 {
     load_css();
+    lmme_editor_apply_font_css(&app->config);
 
     g_action_map_add_action_entries(G_ACTION_MAP(app->gtk_app),
                                     app_actions,
@@ -850,6 +874,67 @@ action_toggle_preview(GSimpleAction *action, GVariant *parameter, gpointer user_
     (void)action;
     (void)parameter;
     lmme_window_toggle_preview(user_data);
+}
+
+static int
+clamp_editor_font_size(int font_size)
+{
+    if (font_size < LMME_EDITOR_FONT_SIZE_MIN) {
+        return LMME_EDITOR_FONT_SIZE_MIN;
+    }
+
+    if (font_size > LMME_EDITOR_FONT_SIZE_MAX) {
+        return LMME_EDITOR_FONT_SIZE_MAX;
+    }
+
+    return font_size;
+}
+
+static void
+set_editor_font_size(LmmeApp *app, int font_size)
+{
+    if (app == NULL) {
+        return;
+    }
+
+    font_size = clamp_editor_font_size(font_size);
+
+    if (app->config.font_size == font_size) {
+        return;
+    }
+
+    app->config.font_size = font_size;
+    lmme_editor_apply_font_css(&app->config);
+    lmme_window_update_status(app);
+}
+
+static void
+action_zoom_in(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    (void)action;
+    (void)parameter;
+
+    set_editor_font_size(app, app->config.font_size + 1);
+}
+
+static void
+action_zoom_out(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    (void)action;
+    (void)parameter;
+
+    set_editor_font_size(app, app->config.font_size - 1);
+}
+
+static void
+action_zoom_reset(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    (void)action;
+    (void)parameter;
+
+    set_editor_font_size(user_data, LMME_EDITOR_FONT_SIZE_DEFAULT);
 }
 
 static void

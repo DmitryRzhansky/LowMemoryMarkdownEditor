@@ -2,6 +2,83 @@
 
 #include "util.h"
 
+static GtkCssProvider *editor_font_provider = NULL;
+static gboolean editor_font_provider_added = FALSE;
+
+static int
+clamp_int(int value, int min, int max)
+{
+    if (value < min) {
+        return min;
+    }
+    if (value > max) {
+        return max;
+    }
+    return value;
+}
+
+static char *
+css_escape_string(const char *value)
+{
+    GString *escaped = g_string_new(NULL);
+    const char *source = value;
+
+    if (source == NULL || source[0] == '\0') {
+        source = "monospace";
+    }
+
+    for (const char *cursor = source; *cursor != '\0'; cursor++) {
+        if (*cursor == '\\' || *cursor == '"') {
+            g_string_append_c(escaped, '\\');
+        }
+        g_string_append_c(escaped, *cursor);
+    }
+
+    return g_string_free(escaped, FALSE);
+}
+
+void
+lmme_editor_apply_font_css(const LmmeConfig *config)
+{
+    const char *family = "monospace";
+    int font_size = LMME_EDITOR_FONT_SIZE_DEFAULT;
+    g_autofree char *escaped_family = NULL;
+    g_autofree char *css = NULL;
+
+    if (config == NULL) {
+        return;
+    }
+
+    if (config->font_family != NULL && config->font_family[0] != '\0') {
+        family = config->font_family;
+    }
+
+    font_size = clamp_int(config->font_size,
+                          LMME_EDITOR_FONT_SIZE_MIN,
+                          LMME_EDITOR_FONT_SIZE_MAX);
+    escaped_family = css_escape_string(family);
+    css = g_strdup_printf(".editor-view,.editor-view text{font-family:\"%s\";font-size:%dpx;}",
+                          escaped_family,
+                          font_size);
+
+    if (editor_font_provider == NULL) {
+        editor_font_provider = gtk_css_provider_new();
+    }
+
+    gtk_css_provider_load_from_string(editor_font_provider, css);
+
+    if (!editor_font_provider_added) {
+        GdkDisplay *display = gdk_display_get_default();
+
+        if (display != NULL) {
+            gtk_style_context_add_provider_for_display(display,
+                                                       GTK_STYLE_PROVIDER(editor_font_provider),
+                                                       GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1);
+            editor_font_provider_added = TRUE;
+        }
+    }
+}
+
 GtkWidget *
 lmme_editor_create_view(GtkSourceBuffer **out_buffer, const LmmeConfig *config)
 {
@@ -29,6 +106,52 @@ lmme_editor_create_view(GtkSourceBuffer **out_buffer, const LmmeConfig *config)
     }
 
     return view;
+}
+
+static gboolean
+on_editor_zoom_key_pressed(GtkEventControllerKey *controller,
+                           guint keyval,
+                           guint keycode,
+                           GdkModifierType state,
+                           gpointer user_data)
+{
+    GActionGroup *actions = user_data;
+    (void)controller;
+    (void)keycode;
+
+    if ((state & GDK_CONTROL_MASK) == 0) {
+        return FALSE;
+    }
+
+    if (keyval == GDK_KEY_equal || keyval == GDK_KEY_plus || keyval == GDK_KEY_KP_Add) {
+        g_action_group_activate_action(actions, "zoom-in", NULL);
+        return TRUE;
+    }
+
+    if (keyval == GDK_KEY_minus || keyval == GDK_KEY_underscore || keyval == GDK_KEY_KP_Subtract) {
+        g_action_group_activate_action(actions, "zoom-out", NULL);
+        return TRUE;
+    }
+
+    if (keyval == GDK_KEY_0 || keyval == GDK_KEY_KP_0) {
+        g_action_group_activate_action(actions, "zoom-reset", NULL);
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+void
+lmme_editor_setup_zoom_keys(GtkWidget *view, GActionGroup *action_group)
+{
+    GtkEventController *key = gtk_event_controller_key_new();
+
+    if (view == NULL || action_group == NULL) {
+        return;
+    }
+
+    g_signal_connect(key, "key-pressed", G_CALLBACK(on_editor_zoom_key_pressed), action_group);
+    gtk_widget_add_controller(view, key);
 }
 
 char *

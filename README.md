@@ -10,6 +10,7 @@ Small Linux-only GTK Markdown editor focused on low memory usage and local folde
 - supports tabs
 - supports autosave and manual save
 - toggles between Source and single-pane Editable Preview styling
+- supports editor font zoom with Ctrl++, Ctrl+-, Ctrl+0, and numpad variants
 - supports image insertion into a workspace-level `img` folder
 - uses a compact light-gray GTK theme
 - stores basic config in `~/.config/lmme/config.ini`

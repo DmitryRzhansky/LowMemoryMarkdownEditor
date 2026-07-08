@@ -339,6 +339,7 @@ document_new(LmmeApp *app, const char *path, const char *contents, const char *r
     doc->path = g_canonicalize_filename(path, NULL);
     doc->relative_path = app->workspace != NULL ? lmme_path_relative_to(app->workspace->path, doc->path) : g_strdup(relative_title);
     doc->source_view = lmme_editor_create_view(&doc->buffer, &app->config);
+    lmme_editor_setup_zoom_keys(doc->source_view, G_ACTION_GROUP(app->gtk_app));
     doc->scroller = gtk_scrolled_window_new();
     doc->save_state = LMME_SAVE_STATE_SAVED;
 

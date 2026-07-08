@@ -26,6 +26,18 @@ get_uint(GKeyFile *key, const char *group, const char *name, guint fallback)
     return value > 0 ? (guint)value : fallback;
 }
 
+static int
+clamp_int(int value, int min, int max)
+{
+    if (value < min) {
+        return min;
+    }
+    if (value > max) {
+        return max;
+    }
+    return value;
+}
+
 static guint
 clamp_uint(guint value, guint min, guint max)
 {
@@ -67,7 +79,7 @@ lmme_config_init_defaults(LmmeConfig *config)
     config->show_hidden_files = TRUE;
     config->show_images = TRUE;
     config->font_family = g_strdup("monospace");
-    config->font_size = 14;
+    config->font_size = LMME_EDITOR_FONT_SIZE_DEFAULT;
     config->word_wrap = TRUE;
     config->line_numbers = TRUE;
     config->autosave = TRUE;
@@ -129,7 +141,10 @@ lmme_config_load(LmmeConfig *config, const char *path, GError **error)
 
     g_free(config->font_family);
     config->font_family = get_string(key, "editor", "font_family", "monospace");
-    config->font_size = get_integer(key, "editor", "font_size", 14);
+    config->font_size = get_integer(key, "editor", "font_size", LMME_EDITOR_FONT_SIZE_DEFAULT);
+    config->font_size = clamp_int(config->font_size,
+                                  LMME_EDITOR_FONT_SIZE_MIN,
+                                  LMME_EDITOR_FONT_SIZE_MAX);
     config->word_wrap = get_boolean(key, "editor", "word_wrap", TRUE);
     config->line_numbers = get_boolean(key, "editor", "line_numbers", TRUE);
     config->autosave = get_boolean(key, "editor", "autosave", TRUE);

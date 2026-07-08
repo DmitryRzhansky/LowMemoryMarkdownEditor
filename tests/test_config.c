@@ -14,6 +14,7 @@ test_defaults(void)
     g_assert_true(config.show_hidden_files);
     g_assert_true(config.autosave);
     g_assert_cmpuint(config.autosave_delay_ms, ==, 700);
+    g_assert_cmpint(config.font_size, ==, LMME_EDITOR_FONT_SIZE_DEFAULT);
     g_assert_false(config.preview_enabled);
     g_assert_true(config.confirm_delete);
 
@@ -99,6 +100,46 @@ test_preview_delay_is_clamped(void)
     g_rmdir(dir);
 }
 
+static void
+test_font_size_clamp(void)
+{
+    LmmeConfig config;
+    g_autofree char *dir = g_dir_make_tmp("lmme-test-config-XXXXXX", NULL);
+    g_autofree char *path = g_build_filename(dir, "config.ini", NULL);
+
+    lmme_config_init_defaults(&config);
+    g_assert_cmpint(config.font_size, ==, LMME_EDITOR_FONT_SIZE_DEFAULT);
+    lmme_config_clear(&config);
+
+    g_assert_true(g_file_set_contents(path, "[editor]\nfont_size=18\n", -1, NULL));
+    g_assert_true(lmme_config_load(&config, path, NULL));
+    g_assert_cmpint(config.font_size, ==, 18);
+    lmme_config_clear(&config);
+
+    g_assert_true(g_file_set_contents(path, "[editor]\nfont_size=200\n", -1, NULL));
+    g_assert_true(lmme_config_load(&config, path, NULL));
+    g_assert_cmpint(config.font_size, ==, LMME_EDITOR_FONT_SIZE_MAX);
+    lmme_config_clear(&config);
+
+    g_assert_true(g_file_set_contents(path, "[editor]\nfont_size=1\n", -1, NULL));
+    g_assert_true(lmme_config_load(&config, path, NULL));
+    g_assert_cmpint(config.font_size, ==, LMME_EDITOR_FONT_SIZE_MIN);
+    lmme_config_clear(&config);
+
+    g_assert_true(g_file_set_contents(path, "[editor]\nfont_size=0\n", -1, NULL));
+    g_assert_true(lmme_config_load(&config, path, NULL));
+    g_assert_cmpint(config.font_size, ==, LMME_EDITOR_FONT_SIZE_MIN);
+    lmme_config_clear(&config);
+
+    g_assert_true(g_file_set_contents(path, "[editor]\nfont_size=-1\n", -1, NULL));
+    g_assert_true(lmme_config_load(&config, path, NULL));
+    g_assert_cmpint(config.font_size, ==, LMME_EDITOR_FONT_SIZE_MIN);
+    lmme_config_clear(&config);
+
+    g_remove(path);
+    g_rmdir(dir);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -108,5 +149,6 @@ main(int argc, char **argv)
     g_test_add_func("/config/roundtrip", test_save_load_roundtrip);
     g_test_add_func("/config/invalid", test_invalid_config_falls_back);
     g_test_add_func("/config/preview-delay-clamp", test_preview_delay_is_clamped);
+    g_test_add_func("/config/font-size-clamp", test_font_size_clamp);
     return g_test_run();
 }

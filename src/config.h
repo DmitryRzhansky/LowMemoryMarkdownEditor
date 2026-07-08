@@ -3,6 +3,10 @@
 
 #include <glib.h>
 
+#define LMME_EDITOR_FONT_SIZE_MIN 9
+#define LMME_EDITOR_FONT_SIZE_DEFAULT 14
+#define LMME_EDITOR_FONT_SIZE_MAX 32
+
 typedef struct {
     int window_width;
     int window_height;
