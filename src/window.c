@@ -20,6 +20,12 @@ static void action_toggle_sidebar(GSimpleAction *action, GVariant *parameter, gp
 static void action_toggle_preview(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 static void action_focus_mode(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 static void action_close_tab(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_close_other_tabs(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_close_tabs_right(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_close_tabs_left(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_close_all_tabs(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_copy_relative_path(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_copy_full_path(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 static void action_next_tab(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 static void action_previous_tab(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 static void action_undo(GSimpleAction *action, GVariant *parameter, gpointer user_data);
@@ -47,6 +53,12 @@ static const GActionEntry app_actions[] = {
     {.name = "toggle-preview", .activate = action_toggle_preview},
     {.name = "focus-mode", .activate = action_focus_mode},
     {.name = "close-tab", .activate = action_close_tab},
+    {.name = "close-other-tabs", .activate = action_close_other_tabs},
+    {.name = "close-tabs-right", .activate = action_close_tabs_right},
+    {.name = "close-tabs-left", .activate = action_close_tabs_left},
+    {.name = "close-all-tabs", .activate = action_close_all_tabs},
+    {.name = "copy-relative-path", .activate = action_copy_relative_path},
+    {.name = "copy-full-path", .activate = action_copy_full_path},
     {.name = "next-tab", .activate = action_next_tab},
     {.name = "previous-tab", .activate = action_previous_tab},
     {.name = "undo", .activate = action_undo},
@@ -794,6 +806,94 @@ action_close_tab(GSimpleAction *action, GVariant *parameter, gpointer user_data)
     (void)action;
     (void)parameter;
     lmme_tabs_close_active(user_data);
+}
+
+static void
+action_close_other_tabs(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    (void)action;
+    (void)parameter;
+
+    if (app == NULL || app->tab_context_document == NULL) {
+        return;
+    }
+
+    lmme_tabs_close_other_tabs(app, app->tab_context_document);
+}
+
+static void
+action_close_tabs_right(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    (void)action;
+    (void)parameter;
+
+    if (app == NULL || app->tab_context_document == NULL) {
+        return;
+    }
+
+    lmme_tabs_close_tabs_to_right(app, app->tab_context_document);
+}
+
+static void
+action_close_tabs_left(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    (void)action;
+    (void)parameter;
+
+    if (app == NULL || app->tab_context_document == NULL) {
+        return;
+    }
+
+    lmme_tabs_close_tabs_to_left(app, app->tab_context_document);
+}
+
+static void
+action_close_all_tabs(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    (void)action;
+    (void)parameter;
+
+    if (app == NULL) {
+        return;
+    }
+
+    lmme_tabs_close_all(app);
+}
+
+static void
+action_copy_relative_path(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    GdkClipboard *clipboard = NULL;
+    (void)action;
+    (void)parameter;
+
+    if (app == NULL || app->tab_context_document == NULL || app->tab_context_document->relative_path == NULL) {
+        return;
+    }
+
+    clipboard = gtk_widget_get_clipboard(app->window);
+    gdk_clipboard_set_text(clipboard, app->tab_context_document->relative_path);
+}
+
+static void
+action_copy_full_path(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    GdkClipboard *clipboard = NULL;
+    (void)action;
+    (void)parameter;
+
+    if (app == NULL || app->tab_context_document == NULL || app->tab_context_document->path == NULL) {
+        return;
+    }
+
+    clipboard = gtk_widget_get_clipboard(app->window);
+    gdk_clipboard_set_text(clipboard, app->tab_context_document->path);
 }
 
 static void

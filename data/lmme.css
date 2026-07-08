@@ -14,6 +14,13 @@ popover modelbutton{background-color:transparent;color:#1f2428;border:0;border-r
 popover modelbutton:hover{background-color:#c2cbd2;color:#111820;}
 popover modelbutton:active,popover modelbutton:checked{background-color:#b7c2ca;color:#111820;}
 popover modelbutton label,popover modelbutton:hover label,popover modelbutton:active label,popover modelbutton:checked label{background-color:transparent;color:#1f2428;}
+popover.menu scrolledwindow{border:0;min-height:0;}
+popover.menu scrolledwindow scrollbar.vertical{min-width:0;opacity:0;border:0;}
+popover.menu scrolledwindow scrollbar.horizontal{min-height:0;opacity:0;border:0;}
+popover.menu listview row{padding:4px 10px;min-height:22px;}
+popover.menu listview row:hover{background-color:#c2cbd2;color:#111820;}
+popover.menu listview row:selected{background-color:#b7c2ca;color:#111820;}
+popover.menu listview row label{background-color:transparent;color:inherit;}
 
 scrolledwindow{background-color:#d3d7db;border:0;}
 textview,sourceview,textview text,sourceview text,.editor-view,.editor-view text{background-color:#d6dadd;color:#202428;font-family:monospace;font-size:14px;}

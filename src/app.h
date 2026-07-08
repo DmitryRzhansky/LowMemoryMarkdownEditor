@@ -41,6 +41,9 @@ typedef struct _LmmeApp {
     guint preview_timeout_id;
 
     GPtrArray *documents;
+
+    /* Non-owning pointer to the tab that opened the current context menu. */
+    LmmeDocument *tab_context_document;
 } LmmeApp;
 
 int lmme_app_run(int argc, char **argv);

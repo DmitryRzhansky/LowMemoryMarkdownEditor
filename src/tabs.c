@@ -8,9 +8,17 @@
 #include "util.h"
 #include "window.h"
 
+static GtkWidget *tab_context_popover;
+static GMenuModel *tab_context_menu_model;
+
 static void on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data);
 static void on_cursor_moved(GObject *object, GParamSpec *pspec, gpointer user_data);
 static LmmePreviewApplyResult apply_document_preview_state(LmmeDocument *doc, gboolean visible);
+static GMenuModel *create_tab_context_menu_model(void);
+static void on_tab_right_click(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data);
+static void attach_tab_context_menu(LmmeDocument *doc, GtkWidget *tab_box);
+static GMenuModel *get_tab_context_menu_model(void);
+static GtkWidget *get_tab_context_popover(void);
 
 const char *
 lmme_document_save_state_label(const LmmeDocument *doc)
@@ -121,6 +129,129 @@ on_close_tab_clicked(GtkButton *button, gpointer user_data)
     }
 }
 
+static GMenuModel *
+create_tab_context_menu_model(void)
+{
+    GMenu *menu = g_menu_new();
+    GMenu *close_section = g_menu_new();
+    GMenu *path_section = g_menu_new();
+
+    g_menu_append(close_section, "Close Tab", "app.close-tab");
+    g_menu_append(close_section, "Close Other Tabs", "app.close-other-tabs");
+    g_menu_append(close_section, "Close Tabs to the Right", "app.close-tabs-right");
+    g_menu_append(close_section, "Close Tabs to the Left", "app.close-tabs-left");
+    g_menu_append(close_section, "Close All Tabs", "app.close-all-tabs");
+
+    g_menu_append(path_section, "Copy Relative Path", "app.copy-relative-path");
+    g_menu_append(path_section, "Copy Full Path", "app.copy-full-path");
+
+    g_menu_append_section(menu, NULL, G_MENU_MODEL(close_section));
+    g_menu_append_section(menu, NULL, G_MENU_MODEL(path_section));
+
+    g_object_unref(close_section);
+    g_object_unref(path_section);
+
+    return G_MENU_MODEL(menu);
+}
+
+static GMenuModel *
+get_tab_context_menu_model(void)
+{
+    if (tab_context_menu_model == NULL) {
+        tab_context_menu_model = create_tab_context_menu_model();
+    }
+
+    return tab_context_menu_model;
+}
+
+static GtkWidget *
+get_tab_context_popover(void)
+{
+    if (tab_context_popover == NULL) {
+        tab_context_popover = gtk_popover_menu_new_from_model(get_tab_context_menu_model());
+        gtk_popover_set_has_arrow(GTK_POPOVER(tab_context_popover), FALSE);
+        gtk_popover_set_autohide(GTK_POPOVER(tab_context_popover), TRUE);
+    }
+
+    return tab_context_popover;
+}
+
+static void
+on_tab_right_click(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data)
+{
+    LmmeDocument *doc = user_data;
+    LmmeApp *app = doc != NULL ? doc->app : NULL;
+    GtkNotebook *notebook = NULL;
+    GtkWidget *popover = NULL;
+    GtkWidget *anchor = NULL;
+    int page = -1;
+    GdkRectangle rect;
+    graphene_point_t src_point;
+    graphene_point_t dest_point;
+
+    (void)gesture;
+
+    if (doc == NULL || app == NULL || app->notebook == NULL || app->root_box == NULL || app->window == NULL ||
+        doc->scroller == NULL || doc->tab_box == NULL) {
+        return;
+    }
+
+    if (n_press != 1) {
+        return;
+    }
+
+    notebook = GTK_NOTEBOOK(app->notebook);
+    page = gtk_notebook_page_num(notebook, doc->scroller);
+    if (page < 0) {
+        return;
+    }
+
+    gtk_notebook_set_current_page(notebook, page);
+    app->tab_context_document = doc;
+
+    popover = get_tab_context_popover();
+    anchor = app->root_box;
+
+    if (gtk_widget_get_parent(popover) != anchor) {
+        if (gtk_widget_get_parent(popover) != NULL) {
+            gtk_widget_unparent(popover);
+        }
+        gtk_widget_set_parent(popover, anchor);
+    }
+
+    if (gtk_widget_get_visible(popover)) {
+        gtk_popover_popdown(GTK_POPOVER(popover));
+    }
+
+    graphene_point_init(&src_point, (float)x, (float)y);
+    if (!gtk_widget_compute_point(doc->tab_box, anchor, &src_point, &dest_point)) {
+        return;
+    }
+
+    rect.x = (int)dest_point.x;
+    rect.y = (int)dest_point.y;
+    rect.width = 1;
+    rect.height = 1;
+
+    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
+    gtk_popover_popup(GTK_POPOVER(popover));
+}
+
+static void
+attach_tab_context_menu(LmmeDocument *doc, GtkWidget *tab_box)
+{
+    GtkGesture *gesture = NULL;
+
+    if (doc == NULL || tab_box == NULL) {
+        return;
+    }
+
+    gesture = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture), GDK_BUTTON_SECONDARY);
+    g_signal_connect(gesture, "pressed", G_CALLBACK(on_tab_right_click), doc);
+    gtk_widget_add_controller(tab_box, GTK_EVENT_CONTROLLER(gesture));
+}
+
 static GtkWidget *
 create_tab_label(LmmeDocument *doc)
 {
@@ -136,6 +267,7 @@ create_tab_label(LmmeDocument *doc)
     gtk_box_append(GTK_BOX(box), label);
     gtk_box_append(GTK_BOX(box), close);
     g_signal_connect(close, "clicked", G_CALLBACK(on_close_tab_clicked), doc);
+    attach_tab_context_menu(doc, box);
 
     doc->title_label = label;
     doc->tab_box = box;
@@ -489,6 +621,10 @@ lmme_tabs_save_active(LmmeApp *app, GError **error)
 static void
 remove_document(LmmeApp *app, LmmeDocument *doc)
 {
+    if (app->tab_context_document == doc) {
+        app->tab_context_document = NULL;
+    }
+
     for (guint i = 0; i < app->documents->len; i++) {
         if (g_ptr_array_index(app->documents, i) == doc) {
             g_ptr_array_remove_index(app->documents, i);
@@ -520,6 +656,129 @@ lmme_tabs_close_active(LmmeApp *app)
     remove_document(app, doc);
     lmme_window_update_status(app);
     lmme_window_schedule_preview(app);
+}
+
+gboolean
+lmme_tabs_close_document(LmmeApp *app, LmmeDocument *doc)
+{
+    GtkNotebook *notebook = NULL;
+    int page = -1;
+    guint before = 0;
+
+    if (app == NULL || doc == NULL || app->notebook == NULL || app->documents == NULL) {
+        return FALSE;
+    }
+
+    notebook = GTK_NOTEBOOK(app->notebook);
+    page = gtk_notebook_page_num(notebook, doc->scroller);
+    if (page < 0) {
+        return FALSE;
+    }
+
+    before = app->documents->len;
+    gtk_notebook_set_current_page(notebook, page);
+    lmme_tabs_close_active(app);
+
+    return app->documents->len < before;
+}
+
+gboolean
+lmme_tabs_close_tabs_to_right(LmmeApp *app, LmmeDocument *anchor)
+{
+    GtkNotebook *notebook = NULL;
+    int anchor_page = -1;
+
+    if (app == NULL || anchor == NULL || app->notebook == NULL || app->documents == NULL) {
+        return FALSE;
+    }
+
+    notebook = GTK_NOTEBOOK(app->notebook);
+    anchor_page = gtk_notebook_page_num(notebook, anchor->scroller);
+    if (anchor_page < 0) {
+        return FALSE;
+    }
+
+    while (gtk_notebook_get_n_pages(notebook) > anchor_page + 1) {
+        guint before = app->documents->len;
+
+        gtk_notebook_set_current_page(notebook, anchor_page + 1);
+        lmme_tabs_close_active(app);
+
+        if (app->documents->len == before) {
+            return FALSE;
+        }
+
+        anchor_page = gtk_notebook_page_num(notebook, anchor->scroller);
+        if (anchor_page < 0) {
+            return FALSE;
+        }
+    }
+
+    gtk_notebook_set_current_page(notebook, anchor_page);
+    return TRUE;
+}
+
+gboolean
+lmme_tabs_close_tabs_to_left(LmmeApp *app, LmmeDocument *anchor)
+{
+    GtkNotebook *notebook = NULL;
+    int anchor_page = -1;
+
+    if (app == NULL || anchor == NULL || app->notebook == NULL || app->documents == NULL) {
+        return FALSE;
+    }
+
+    notebook = GTK_NOTEBOOK(app->notebook);
+    anchor_page = gtk_notebook_page_num(notebook, anchor->scroller);
+    if (anchor_page < 0) {
+        return FALSE;
+    }
+
+    while (anchor_page > 0) {
+        guint before = app->documents->len;
+
+        gtk_notebook_set_current_page(notebook, 0);
+        lmme_tabs_close_active(app);
+
+        if (app->documents->len == before) {
+            return FALSE;
+        }
+
+        anchor_page = gtk_notebook_page_num(notebook, anchor->scroller);
+        if (anchor_page < 0) {
+            return FALSE;
+        }
+    }
+
+    gtk_notebook_set_current_page(notebook, anchor_page);
+    return TRUE;
+}
+
+gboolean
+lmme_tabs_close_other_tabs(LmmeApp *app, LmmeDocument *anchor)
+{
+    GtkNotebook *notebook = NULL;
+    int anchor_page = -1;
+
+    if (app == NULL || anchor == NULL || app->notebook == NULL || app->documents == NULL) {
+        return FALSE;
+    }
+
+    if (!lmme_tabs_close_tabs_to_right(app, anchor)) {
+        return FALSE;
+    }
+
+    if (!lmme_tabs_close_tabs_to_left(app, anchor)) {
+        return FALSE;
+    }
+
+    notebook = GTK_NOTEBOOK(app->notebook);
+    anchor_page = gtk_notebook_page_num(notebook, anchor->scroller);
+    if (anchor_page >= 0) {
+        gtk_notebook_set_current_page(notebook, anchor_page);
+    }
+
+    return TRUE;
 }
 
 gboolean

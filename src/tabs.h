@@ -41,6 +41,10 @@ gboolean lmme_tabs_open_recovery_file(LmmeApp *app, const char *path, const char
 gboolean lmme_tabs_save_document(LmmeDocument *doc, GError **error);
 gboolean lmme_tabs_save_active(LmmeApp *app, GError **error);
 void lmme_tabs_close_active(LmmeApp *app);
+gboolean lmme_tabs_close_document(LmmeApp *app, LmmeDocument *doc);
+gboolean lmme_tabs_close_tabs_to_right(LmmeApp *app, LmmeDocument *anchor);
+gboolean lmme_tabs_close_tabs_to_left(LmmeApp *app, LmmeDocument *anchor);
+gboolean lmme_tabs_close_other_tabs(LmmeApp *app, LmmeDocument *anchor);
 gboolean lmme_tabs_close_all(LmmeApp *app);
 void lmme_tabs_close_path(LmmeApp *app, const char *path);
 void lmme_tabs_update_path(LmmeApp *app, const char *old_path, const char *new_path);
