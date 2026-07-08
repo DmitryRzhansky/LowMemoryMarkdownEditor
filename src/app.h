@@ -29,6 +29,7 @@ typedef struct _LmmeApp {
     GtkWidget *search_bar;
     GtkWidget *find_entry;
     GtkWidget *replace_entry;
+    GtkWidget *replace_button;
 
     char *selected_path;
     gboolean selected_is_dir;

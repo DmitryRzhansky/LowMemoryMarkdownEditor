@@ -147,7 +147,7 @@ create_menu_model(void)
 static GtkWidget *
 create_toolbar(void)
 {
-    GtkWidget *toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    GtkWidget *toolbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
     gtk_widget_add_css_class(toolbar, "toolbar");
     gtk_box_append(GTK_BOX(toolbar), make_button("Open", "app.open"));
     gtk_box_append(GTK_BOX(toolbar), make_button("New File", "app.new-file"));
@@ -269,30 +269,90 @@ on_replace_button_clicked(GtkButton *button, gpointer user_data)
     action_replace(NULL, NULL, user_data);
 }
 
+static gboolean
+search_bar_is_visible(LmmeApp *app)
+{
+    return gtk_widget_get_visible(app->search_bar);
+}
+
+static gboolean
+search_bar_is_replace_mode(LmmeApp *app)
+{
+    return gtk_widget_get_visible(app->replace_entry);
+}
+
+static void
+hide_search_bar(LmmeApp *app)
+{
+    LmmeDocument *doc;
+
+    if (!search_bar_is_visible(app)) {
+        return;
+    }
+
+    gtk_widget_set_visible(app->search_bar, FALSE);
+    gtk_widget_set_visible(app->replace_entry, FALSE);
+
+    doc = lmme_tabs_get_active(app);
+    if (doc != NULL) {
+        gtk_widget_grab_focus(doc->source_view);
+    }
+}
+
+static gboolean
+on_window_search_key_pressed(GtkEventControllerKey *controller,
+                             guint keyval,
+                             guint keycode,
+                             GdkModifierType state,
+                             gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    (void)controller;
+    (void)keycode;
+    (void)state;
+
+    if (keyval != GDK_KEY_Escape || !search_bar_is_visible(app)) {
+        return FALSE;
+    }
+
+    hide_search_bar(app);
+    return TRUE;
+}
+
+static void
+search_bar_set_valign_center(GtkWidget *widget)
+{
+    gtk_widget_set_valign(widget, GTK_ALIGN_CENTER);
+}
+
 static GtkWidget *
 create_search_bar(LmmeApp *app)
 {
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    GtkWidget *find_label = gtk_label_new("Find");
-    GtkWidget *replace_label = gtk_label_new("Replace");
-    GtkWidget *next = gtk_button_new_with_label("Find");
-    GtkWidget *replace = gtk_button_new_with_label("Replace");
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    GtkWidget *find_button = gtk_button_new_with_label("Find");
 
     gtk_widget_add_css_class(box, "searchbar");
     app->find_entry = gtk_entry_new();
     app->replace_entry = gtk_entry_new();
+    app->replace_button = gtk_button_new_with_label("Replace");
 
-    gtk_box_append(GTK_BOX(box), find_label);
+    gtk_widget_set_size_request(app->find_entry, 180, -1);
+    gtk_widget_set_size_request(app->replace_entry, 180, -1);
+    search_bar_set_valign_center(app->find_entry);
+    search_bar_set_valign_center(find_button);
+    search_bar_set_valign_center(app->replace_entry);
+    search_bar_set_valign_center(app->replace_button);
+
     gtk_box_append(GTK_BOX(box), app->find_entry);
-    gtk_box_append(GTK_BOX(box), next);
-    gtk_box_append(GTK_BOX(box), replace_label);
+    gtk_box_append(GTK_BOX(box), find_button);
     gtk_box_append(GTK_BOX(box), app->replace_entry);
-    gtk_box_append(GTK_BOX(box), replace);
+    gtk_box_append(GTK_BOX(box), app->replace_button);
 
-    g_signal_connect(next, "clicked", G_CALLBACK(on_find_button_clicked), app);
-    g_signal_connect(replace, "clicked", G_CALLBACK(on_replace_button_clicked), app);
+    g_signal_connect(find_button, "clicked", G_CALLBACK(on_find_button_clicked), app);
+    g_signal_connect(app->replace_button, "clicked", G_CALLBACK(on_replace_button_clicked), app);
 
     gtk_widget_set_visible(box, FALSE);
+    gtk_widget_set_visible(app->replace_entry, FALSE);
     return box;
 }
 
@@ -400,6 +460,10 @@ lmme_window_build(LmmeApp *app)
 
     app->search_bar = create_search_bar(app);
     gtk_box_append(GTK_BOX(app->right_box), app->search_bar);
+
+    GtkEventController *search_key = gtk_event_controller_key_new();
+    g_signal_connect(search_key, "key-pressed", G_CALLBACK(on_window_search_key_pressed), app);
+    gtk_widget_add_controller(app->window, search_key);
 
     app->status_label = gtk_label_new("No workspace opened");
     gtk_label_set_xalign(GTK_LABEL(app->status_label), 0.0f);
@@ -977,7 +1041,7 @@ show_search_bar(LmmeApp *app, gboolean with_replace)
 {
     gtk_widget_set_visible(app->search_bar, TRUE);
     gtk_widget_set_visible(app->replace_entry, with_replace);
-    gtk_widget_grab_focus(app->find_entry);
+    gtk_widget_grab_focus(with_replace ? app->replace_entry : app->find_entry);
 }
 
 static void
@@ -987,6 +1051,11 @@ action_find(GSimpleAction *action, GVariant *parameter, gpointer user_data)
     LmmeDocument *doc = lmme_tabs_get_active(app);
     (void)action;
     (void)parameter;
+
+    if (search_bar_is_visible(app) && !search_bar_is_replace_mode(app)) {
+        hide_search_bar(app);
+        return;
+    }
 
     show_search_bar(app, FALSE);
     if (doc != NULL) {
@@ -1004,6 +1073,11 @@ action_replace(GSimpleAction *action, GVariant *parameter, gpointer user_data)
     LmmeDocument *doc = lmme_tabs_get_active(app);
     (void)action;
     (void)parameter;
+
+    if (search_bar_is_visible(app) && search_bar_is_replace_mode(app)) {
+        hide_search_bar(app);
+        return;
+    }
 
     show_search_bar(app, TRUE);
     if (doc != NULL) {

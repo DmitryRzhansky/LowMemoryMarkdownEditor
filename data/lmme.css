@@ -48,7 +48,10 @@ notebook tab button:hover{background-color:#b8c2ca;border:0;}
 notebook tab:checked button:hover{background-color:#bdc6ce;border:0;}
 
 paned>separator{background-color:#9ea8b0;min-width:1px;min-height:1px;}
-.toolbar{background-color:#b8c0c7;border-bottom:1px solid #9ea8b0;padding:6px;}
+.toolbar{background-color:#b8c0c7;border-bottom:1px solid #9ea8b0;padding:3px 6px;}
+.toolbar button{padding:2px 8px;min-height:0;min-width:0;}
 .sidebar{background-color:#b7bec5;border-right:1px solid #9ea8b0;}
 .statusbar{background-color:#b8c0c7;border-top:1px solid #9ea8b0;color:#273038;padding:5px 8px;}
-.searchbar{background-color:#c0c6cb;border-top:1px solid #9ea8b0;padding:6px;}
+.searchbar{background-color:#c0c6cb;border-top:1px solid #9ea8b0;padding:3px 6px;}
+.searchbar button{padding:2px 8px;min-height:0;min-width:0;}
+.searchbar entry{padding:2px 6px;min-height:0;max-width:220px;}
