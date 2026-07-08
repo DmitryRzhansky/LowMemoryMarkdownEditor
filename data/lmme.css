@@ -1,0 +1,79 @@
+window {
+  background: #121212;
+  color: #e6e6e6;
+}
+
+box, paned, notebook, popovermenubar {
+  background: #121212;
+  color: #e6e6e6;
+}
+
+textview, sourceview {
+  background: #151515;
+  color: #e6e6e6;
+  font-family: monospace;
+  font-size: 14px;
+}
+
+treeview {
+  background: #111111;
+  color: #dddddd;
+}
+
+treeview:selected {
+  background: #2b4a65;
+  color: #ffffff;
+}
+
+button {
+  background: #202020;
+  color: #eeeeee;
+  border: 1px solid #333333;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+button:hover {
+  background: #282828;
+}
+
+entry {
+  background: #151515;
+  color: #eeeeee;
+  border: 1px solid #333333;
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+
+notebook tab {
+  background: #181818;
+  color: #cccccc;
+  border: 1px solid #2a2a2a;
+  padding: 2px 6px;
+}
+
+notebook tab:checked {
+  background: #252525;
+  color: #ffffff;
+}
+
+.toolbar {
+  border-bottom: 1px solid #282828;
+  padding: 4px;
+}
+
+.sidebar {
+  border-right: 1px solid #282828;
+}
+
+.statusbar {
+  background: #101010;
+  border-top: 1px solid #282828;
+  color: #cfcfcf;
+  padding: 4px 8px;
+}
+
+.searchbar {
+  border-top: 1px solid #282828;
+  padding: 4px;
+}

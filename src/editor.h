@@ -1,0 +1,21 @@
+#ifndef LMME_EDITOR_H
+#define LMME_EDITOR_H
+
+#include <gtksourceview/gtksource.h>
+#include <gtk/gtk.h>
+
+#include "config.h"
+
+GtkWidget *lmme_editor_create_view(GtkSourceBuffer **out_buffer, const LmmeConfig *config);
+char *lmme_editor_dup_text(GtkTextBuffer *buffer);
+void lmme_editor_get_cursor(GtkTextBuffer *buffer, int *line, int *column);
+void lmme_editor_insert_text_at_cursor(GtkTextBuffer *buffer, const char *text);
+void lmme_editor_wrap_selection(GtkTextBuffer *buffer,
+                                const char *prefix,
+                                const char *suffix,
+                                int cursor_offset_when_empty);
+gboolean lmme_editor_find(GtkTextBuffer *buffer, const char *needle, gboolean from_cursor);
+gboolean lmme_editor_replace_current(GtkTextBuffer *buffer, const char *needle, const char *replacement);
+guint lmme_editor_word_count(GtkTextBuffer *buffer);
+
+#endif

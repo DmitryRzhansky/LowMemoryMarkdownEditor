@@ -1,0 +1,8 @@
+AGENTS.md
+build/
+build-*/
+.cache/
+.ninja_*
+*.o
+*.a
+lmme
