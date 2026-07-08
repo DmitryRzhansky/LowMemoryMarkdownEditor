@@ -23,10 +23,7 @@ typedef struct _LmmeApp {
     GtkWidget *tree_view;
     GtkWidget *main_paned;
     GtkWidget *right_box;
-    GtkWidget *editor_preview_paned;
     GtkWidget *notebook;
-    GtkWidget *preview_scroller;
-    GtkWidget *preview_view;
     GtkWidget *status_label;
     GtkWidget *breadcrumbs_label;
     GtkWidget *search_bar;

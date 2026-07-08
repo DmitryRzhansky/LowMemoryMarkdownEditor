@@ -6,18 +6,11 @@ GtkWidget *
 lmme_editor_create_view(GtkSourceBuffer **out_buffer, const LmmeConfig *config)
 {
     GtkSourceLanguageManager *manager = gtk_source_language_manager_get_default();
-    GtkSourceStyleSchemeManager *scheme_manager = gtk_source_style_scheme_manager_get_default();
     GtkSourceLanguage *language = gtk_source_language_manager_get_language(manager, "markdown");
-    GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(scheme_manager, "Adwaita");
     GtkSourceBuffer *buffer = language != NULL ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(NULL);
     GtkWidget *view = gtk_source_view_new_with_buffer(buffer);
 
-    if (scheme == NULL) {
-        scheme = gtk_source_style_scheme_manager_get_scheme(scheme_manager, "classic");
-    }
-    if (scheme != NULL) {
-        gtk_source_buffer_set_style_scheme(buffer, scheme);
-    }
+    gtk_widget_add_css_class(view, "editor-view");
 
     gtk_source_view_set_show_line_numbers(GTK_SOURCE_VIEW(view), config->line_numbers);
     gtk_source_view_set_tab_width(GTK_SOURCE_VIEW(view), 4);

@@ -195,10 +195,19 @@ document_new(LmmeApp *app, const char *path, const char *contents, const char *r
     doc->path = g_canonicalize_filename(path, NULL);
     doc->relative_path = app->workspace != NULL ? lmme_path_relative_to(app->workspace->path, doc->path) : g_strdup(relative_title);
     doc->source_view = lmme_editor_create_view(&doc->buffer, &app->config);
-    doc->scroller = gtk_scrolled_window_new();
+    doc->source_scroller = gtk_scrolled_window_new();
+    doc->preview_view = lmme_preview_create_view();
+    doc->preview_scroller = gtk_scrolled_window_new();
+    doc->scroller = gtk_stack_new();
     doc->save_state = LMME_SAVE_STATE_SAVED;
 
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(doc->scroller), doc->source_view);
+    gtk_widget_set_hexpand(doc->scroller, TRUE);
+    gtk_widget_set_vexpand(doc->scroller, TRUE);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(doc->source_scroller), doc->source_view);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(doc->preview_scroller), doc->preview_view);
+    gtk_stack_add_named(GTK_STACK(doc->scroller), doc->source_scroller, "editor");
+    gtk_stack_add_named(GTK_STACK(doc->scroller), doc->preview_scroller, "preview");
+    lmme_document_set_preview_visible(doc, app->preview_enabled);
     lmme_image_insert_setup_for_document(doc);
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(doc->buffer), contents != NULL ? contents : "", -1);
     gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc->buffer), FALSE);
@@ -208,6 +217,28 @@ document_new(LmmeApp *app, const char *path, const char *contents, const char *r
     attach_monitor(doc);
 
     return doc;
+}
+
+void
+lmme_document_set_preview_visible(LmmeDocument *doc, gboolean visible)
+{
+    if (doc == NULL || doc->scroller == NULL) {
+        return;
+    }
+
+    gtk_stack_set_visible_child_name(GTK_STACK(doc->scroller), visible ? "preview" : "editor");
+}
+
+void
+lmme_tabs_set_preview_visible(LmmeApp *app, gboolean visible)
+{
+    if (app == NULL || app->documents == NULL) {
+        return;
+    }
+
+    for (guint i = 0; i < app->documents->len; i++) {
+        lmme_document_set_preview_visible(g_ptr_array_index(app->documents, i), visible);
+    }
 }
 
 LmmeDocument *

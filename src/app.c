@@ -37,16 +37,9 @@ on_shutdown(GApplication *application, gpointer user_data)
     }
 
     app->config.preview_enabled = app->preview_enabled;
-    app->config.focus_mode = app->focus_mode;
+    app->config.focus_mode = FALSE;
     if (app->main_paned != NULL) {
         app->config.sidebar_width = gtk_paned_get_position(GTK_PANED(app->main_paned));
-    }
-    if (app->editor_preview_paned != NULL) {
-        int width = gtk_widget_get_width(app->editor_preview_paned);
-        int position = gtk_paned_get_position(GTK_PANED(app->editor_preview_paned));
-        if (width > 0 && position >= 0 && position <= width) {
-            app->config.preview_split_ratio = (double)(width - position) / (double)width;
-        }
     }
 
     g_autoptr(GPtrArray) paths = lmme_tabs_open_paths(app);
@@ -75,7 +68,7 @@ app_new(GtkApplication *gtk_app)
     }
 
     app->preview_enabled = app->config.preview_enabled;
-    app->focus_mode = app->config.focus_mode;
+    app->focus_mode = FALSE;
 
     return app;
 }

@@ -4,12 +4,12 @@
 }
 
 window {
-  background-color: #d7dade;
+  background-color: #c0c6cb;
   color: #1f2428;
 }
 
 box, paned, notebook, popovermenubar {
-  background-color: #d7dade;
+  background-color: #c0c6cb;
   color: #1f2428;
 }
 
@@ -18,7 +18,7 @@ popovermenubar {
 }
 
 scrolledwindow {
-  background-color: #eef0f1;
+  background-color: #d3d7db;
   border: 0;
 }
 
@@ -26,79 +26,109 @@ textview,
 sourceview,
 textview text,
 sourceview text {
-  background-color: #f3f4f4;
+  background-color: #d6dadd;
   color: #202428;
   font-family: monospace;
   font-size: 14px;
 }
 
+.editor-view,
+.editor-view text {
+  background-color: #d6dadd;
+  color: #202428;
+  font-family: monospace;
+  font-size: 14px;
+}
+
+.preview-view,
+.preview-view text {
+  background-color: #d3d7db;
+  color: #22282d;
+  font-family: sans-serif;
+  font-size: 15px;
+}
+
 sourceview gutter,
 sourceview gutter cell {
-  background-color: #e4e7e9;
-  color: #7a828a;
+  background-color: #c7cdd2;
+  color: #66717a;
   border: 0;
 }
 
 treeview {
-  background-color: #cfd4d8;
+  background-color: #b7bec5;
   color: #22282d;
   border: 0;
 }
 
 treeview:selected {
-  background-color: #9fb6c9;
+  background-color: #8fa9bd;
   color: #101820;
 }
 
 button {
-  background-color: #dfe2e4;
+  background-color: #cbd1d6;
   color: #202428;
-  border: 1px solid #b9c0c6;
+  border: 1px solid #a9b2ba;
   border-radius: 5px;
   padding: 5px 9px;
 }
 
 button:hover {
-  background-color: #e9ebed;
-  border-color: #aeb6bd;
+  background-color: #d5dade;
+  border-color: #98a3ac;
 }
 
 button:active {
-  background-color: #cfd5da;
+  background-color: #bfc7ce;
 }
 
 entry {
-  background-color: #f3f4f4;
+  background-color: #d8dcdf;
   color: #202428;
-  border: 1px solid #b8c0c7;
+  border: 1px solid #a9b2ba;
   border-radius: 5px;
   padding: 5px 7px;
 }
 
 notebook {
-  background-color: #eef0f1;
+  background-color: #d3d7db;
   border: 0;
 }
 
 notebook > header {
-  background-color: #d7dade;
+  background-color: #c0c6cb;
   border: 0;
   padding: 3px 6px 0 6px;
 }
 
 notebook tab {
-  background-color: #dfe3e6;
+  background-color: #cbd1d6;
   color: #283038;
-  border: 1px solid #bec5cb;
+  border: 1px solid #aeb7bf;
   border-bottom: 0;
   border-radius: 5px 5px 0 0;
-  padding: 4px 8px;
+  padding: 0;
   margin-right: 3px;
 }
 
+notebook tab box,
+notebook tab label {
+  background-color: transparent;
+}
+
+notebook tab box {
+  padding: 4px 8px;
+}
+
 notebook tab:checked {
-  background-color: #f3f4f4;
+  background-color: #d6dadd;
   color: #111820;
+}
+
+notebook tab:checked box,
+notebook tab:checked label {
+  background-color: #d6dadd;
 }
 
 notebook tab button {
@@ -108,37 +138,47 @@ notebook tab button {
   margin-left: 4px;
 }
 
+notebook tab:checked button {
+  background-color: #d6dadd;
+  border: 0;
+}
+
 notebook tab button:hover {
-  background-color: #ccd3d9;
+  background-color: #b8c2ca;
+  border: 0;
+}
+
+notebook tab:checked button:hover {
+  background-color: #bdc6ce;
   border: 0;
 }
 
 paned > separator {
-  background-color: #b9c0c6;
+  background-color: #9ea8b0;
   min-width: 1px;
   min-height: 1px;
 }
 
 .toolbar {
-  background-color: #d0d4d8;
-  border-bottom: 1px solid #b8bec4;
+  background-color: #b8c0c7;
+  border-bottom: 1px solid #9ea8b0;
   padding: 6px;
 }
 
 .sidebar {
-  background-color: #cfd4d8;
-  border-right: 1px solid #b8bec4;
+  background-color: #b7bec5;
+  border-right: 1px solid #9ea8b0;
 }
 
 .statusbar {
-  background-color: #cfd4d8;
-  border-top: 1px solid #b8bec4;
+  background-color: #b8c0c7;
+  border-top: 1px solid #9ea8b0;
   color: #273038;
   padding: 5px 8px;
 }
 
 .searchbar {
-  background-color: #d7dade;
-  border-top: 1px solid #b8bec4;
+  background-color: #c0c6cb;
+  border-top: 1px solid #9ea8b0;
   padding: 6px;
 }

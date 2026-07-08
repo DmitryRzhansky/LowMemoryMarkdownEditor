@@ -347,8 +347,10 @@ lmme_window_build(LmmeApp *app)
 
     app->main_paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_widget_set_vexpand(app->main_paned, TRUE);
+    gtk_paned_set_shrink_start_child(GTK_PANED(app->main_paned), FALSE);
     gtk_box_append(GTK_BOX(app->root_box), app->main_paned);
 
+    app->config.sidebar_width = MAX(app->config.sidebar_width, 220);
     app->sidebar = gtk_scrolled_window_new();
     gtk_widget_add_css_class(app->sidebar, "sidebar");
     gtk_widget_set_size_request(app->sidebar, app->config.sidebar_width, -1);
@@ -366,22 +368,11 @@ lmme_window_build(LmmeApp *app)
     gtk_widget_set_margin_bottom(app->breadcrumbs_label, 4);
     gtk_box_append(GTK_BOX(app->right_box), app->breadcrumbs_label);
 
-    app->editor_preview_paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_widget_set_vexpand(app->editor_preview_paned, TRUE);
-    gtk_box_append(GTK_BOX(app->right_box), app->editor_preview_paned);
-
     app->notebook = gtk_notebook_new();
     gtk_notebook_set_scrollable(GTK_NOTEBOOK(app->notebook), TRUE);
-    gtk_paned_set_start_child(GTK_PANED(app->editor_preview_paned), app->notebook);
-
-    app->preview_view = lmme_preview_create_view();
-    app->preview_scroller = gtk_scrolled_window_new();
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(app->preview_scroller), app->preview_view);
-    gtk_paned_set_end_child(GTK_PANED(app->editor_preview_paned), app->preview_scroller);
-    gtk_widget_set_visible(app->preview_scroller, app->preview_enabled);
-    int preview_total_width = MAX(400, app->config.window_width - app->config.sidebar_width);
-    int editor_width = (int)((double)preview_total_width * (1.0 - app->config.preview_split_ratio));
-    gtk_paned_set_position(GTK_PANED(app->editor_preview_paned), editor_width);
+    gtk_widget_set_hexpand(app->notebook, TRUE);
+    gtk_widget_set_vexpand(app->notebook, TRUE);
+    gtk_box_append(GTK_BOX(app->right_box), app->notebook);
 
     app->search_bar = create_search_bar(app);
     gtk_box_append(GTK_BOX(app->right_box), app->search_bar);
@@ -476,7 +467,7 @@ lmme_window_update_status(LmmeApp *app)
                                               column,
                                               words,
                                               lmme_document_save_state_label(doc),
-                                              app->preview_enabled ? "Editor + Preview" : "Editor");
+                                              app->preview_enabled ? "Preview" : "Editor");
     gtk_label_set_text(GTK_LABEL(app->status_label), status);
 }
 
@@ -494,12 +485,11 @@ preview_timeout_cb(gpointer user_data)
 
     app->preview_timeout_id = 0;
     if (!app->preview_enabled || doc == NULL) {
-        lmme_preview_set_markdown(app->preview_view, "", app->config.preview_hide_frontmatter);
         return G_SOURCE_REMOVE;
     }
 
     g_autofree char *text = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
-    lmme_preview_set_markdown(app->preview_view, text, app->config.preview_hide_frontmatter);
+    lmme_preview_set_markdown(doc->preview_view, text, app->config.preview_hide_frontmatter);
     return G_SOURCE_REMOVE;
 }
 
@@ -522,8 +512,14 @@ void
 lmme_window_toggle_preview(LmmeApp *app)
 {
     app->preview_enabled = !app->preview_enabled;
-    gtk_widget_set_visible(app->preview_scroller, app->preview_enabled);
-    lmme_window_schedule_preview(app);
+    lmme_tabs_set_preview_visible(app, app->preview_enabled);
+    if (app->preview_timeout_id != 0) {
+        g_source_remove(app->preview_timeout_id);
+        app->preview_timeout_id = 0;
+    }
+    if (app->preview_enabled) {
+        (void)preview_timeout_cb(app);
+    }
     lmme_window_update_status(app);
 }
 
