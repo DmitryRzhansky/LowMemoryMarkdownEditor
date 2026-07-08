@@ -60,6 +60,7 @@ lmme_file_tree_create(void)
     gtk_tree_view_append_column(GTK_TREE_VIEW(tree), column);
 
     gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(tree), FALSE);
+    gtk_tree_view_set_activate_on_single_click(GTK_TREE_VIEW(tree), TRUE);
     gtk_widget_set_hexpand(tree, TRUE);
     gtk_widget_set_vexpand(tree, TRUE);
 

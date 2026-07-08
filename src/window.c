@@ -211,6 +211,15 @@ on_tree_row_activated(GtkTreeView *tree_view,
                        &kind,
                        -1);
 
+    if ((LmmeFileKind)kind == LMME_FILE_KIND_DIRECTORY) {
+        if (gtk_tree_view_row_expanded(tree_view, path)) {
+            gtk_tree_view_collapse_row(tree_view, path);
+        } else {
+            gtk_tree_view_expand_row(tree_view, path, FALSE);
+        }
+        return;
+    }
+
     if ((LmmeFileKind)kind == LMME_FILE_KIND_MARKDOWN) {
         g_autoptr(GError) error = NULL;
         if (!lmme_tabs_open_file(app, file_path, &error)) {

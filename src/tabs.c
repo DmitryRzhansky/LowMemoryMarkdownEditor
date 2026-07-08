@@ -118,11 +118,14 @@ on_close_tab_clicked(GtkButton *button, gpointer user_data)
 static GtkWidget *
 create_tab_label(LmmeDocument *doc)
 {
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
     GtkWidget *label = gtk_label_new("");
     GtkWidget *close = gtk_button_new_from_icon_name("window-close-symbolic");
 
+    gtk_widget_add_css_class(box, "tab-label");
+    gtk_widget_add_css_class(close, "tab-close");
     gtk_button_set_has_frame(GTK_BUTTON(close), FALSE);
+    gtk_widget_set_size_request(close, 18, 18);
     gtk_widget_set_tooltip_text(close, "Close");
     gtk_box_append(GTK_BOX(box), label);
     gtk_box_append(GTK_BOX(box), close);
