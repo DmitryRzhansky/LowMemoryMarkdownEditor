@@ -1,244 +1,47 @@
-* {
-  outline-width: 0;
-  box-shadow: none;
-}
+*{outline-width:0;box-shadow:none;}
+window{background-color:#c0c6cb;color:#1f2428;}
+box,paned,notebook,popovermenubar{background-color:#c0c6cb;color:#1f2428;}
+dialog,dialog box,window.dialog{background-color:#c0c6cb;color:#1f2428;}
+dialog label,window.dialog label{background-color:transparent;color:#1f2428;}
 
-window {
-  background-color: #c0c6cb;
-  color: #1f2428;
-}
+popovermenubar{padding:1px 4px;}
+popovermenubar button,popovermenubar menubutton>button{background-color:transparent;border:0;border-radius:0;padding:2px 6px;}
+popovermenubar button:hover,popovermenubar menubutton>button:hover{background-color:#b8c0c7;border:0;}
+popover,popover contents{background-color:#d3d7db;color:#1f2428;border:1px solid #9ea8b0;border-radius:0;}
+popover contents{padding:0;}
+popover box{background-color:transparent;color:#1f2428;}
+popover modelbutton{background-color:transparent;color:#1f2428;border:0;border-radius:0;padding:4px 10px;min-height:22px;}
+popover modelbutton:hover{background-color:#c2cbd2;color:#111820;}
+popover modelbutton:active,popover modelbutton:checked{background-color:#b7c2ca;color:#111820;}
+popover modelbutton label,popover modelbutton:hover label,popover modelbutton:active label,popover modelbutton:checked label{background-color:transparent;color:#1f2428;}
 
-box, paned, notebook, popovermenubar {
-  background-color: #c0c6cb;
-  color: #1f2428;
-}
+scrolledwindow{background-color:#d3d7db;border:0;}
+textview,sourceview,textview text,sourceview text,.editor-view,.editor-view text{background-color:#d6dadd;color:#202428;font-family:monospace;font-size:14px;}
+.preview-view,.preview-view text{background-color:#d3d7db;color:#22282d;font-family:sans-serif;font-size:15px;}
+sourceview gutter,sourceview gutter cell,sourceview gutter>*,sourceview border,sourceview>border,sourceview gutterrenderer,.editor-view gutter,.editor-view gutter cell,.editor-view border,.editor-view>border{background-color:#c7cdd2;color:#66717a;border:0;}
 
-popovermenubar {
-  padding: 1px 4px;
-}
+treeview{background-color:#b7bec5;color:#22282d;border:0;}
+treeview:selected{background-color:#8fa9bd;color:#101820;}
+button{background-color:#cbd1d6;color:#202428;border:1px solid #a9b2ba;border-radius:5px;padding:5px 9px;}
+button:hover{background-color:#d5dade;border-color:#98a3ac;}
+button:active{background-color:#bfc7ce;}
+entry{background-color:#d8dcdf;color:#202428;border:1px solid #a9b2ba;border-radius:5px;padding:5px 7px;}
 
-popover,
-popover contents {
-  background-color: #eef1f3;
-  color: #1f2428;
-  border: 1px solid #a6b0b8;
-}
+notebook{background-color:#d3d7db;border:0;}
+notebook stack,notebook>stack,stack{background-color:#d3d7db;}
+notebook>header{background-color:#c0c6cb;border:0;padding:1px 4px 0 24px;min-height:0;}
+notebook tab,notebook tab:hover,notebook tab:checked,notebook tab:checked:hover{background-color:#cbd1d6;color:#283038;border:1px solid #aeb7bf;border-bottom:0;border-radius:4px 4px 0 0;padding:0;margin-right:2px;min-height:0;}
+notebook tab box,notebook tab label{background-color:transparent;margin:0;padding:0;}
+notebook tab .tab-label{background-color:#cbd1d6;border-radius:4px 4px 0 0;padding:2px 6px;min-height:0;}
+notebook tab:checked{background-color:#d6dadd;color:#111820;}
+notebook tab:checked box,notebook tab:checked label,notebook tab:checked .tab-label{background-color:#d6dadd;border-radius:4px 4px 0 0;}
+notebook tab button,notebook tab button.tab-close{background-color:transparent;border:0;border-radius:3px;margin:0 0 0 3px;min-height:16px;min-width:16px;padding:0 2px;}
+notebook tab:checked button{background-color:transparent;border:0;}
+notebook tab button:hover{background-color:#b8c2ca;border:0;}
+notebook tab:checked button:hover{background-color:#bdc6ce;border:0;}
 
-popover contents {
-  padding: 2px;
-}
-
-popover modelbutton {
-  background-color: #eef1f3;
-  color: #1f2428;
-  border: 0;
-  border-radius: 4px;
-  padding: 3px 10px;
-  min-height: 22px;
-}
-
-popover modelbutton:hover {
-  background-color: #d8dee3;
-  color: #111820;
-}
-
-popover modelbutton label {
-  background-color: transparent;
-  color: #1f2428;
-}
-
-scrolledwindow {
-  background-color: #d3d7db;
-  border: 0;
-}
-
-textview,
-sourceview,
-textview text,
-sourceview text {
-  background-color: #d6dadd;
-  color: #202428;
-  font-family: monospace;
-  font-size: 14px;
-}
-
-.editor-view,
-.editor-view text {
-  background-color: #d6dadd;
-  color: #202428;
-  font-family: monospace;
-  font-size: 14px;
-}
-
-.preview-view,
-.preview-view text {
-  background-color: #d3d7db;
-  color: #22282d;
-  font-family: sans-serif;
-  font-size: 15px;
-}
-
-sourceview gutter,
-sourceview gutter cell,
-sourceview gutter > *,
-sourceview border,
-sourceview > border,
-sourceview gutterrenderer,
-.editor-view gutter,
-.editor-view gutter cell,
-.editor-view border,
-.editor-view > border {
-  background-color: #c7cdd2;
-  color: #66717a;
-  border: 0;
-}
-
-treeview {
-  background-color: #b7bec5;
-  color: #22282d;
-  border: 0;
-}
-
-treeview:selected {
-  background-color: #8fa9bd;
-  color: #101820;
-}
-
-button {
-  background-color: #cbd1d6;
-  color: #202428;
-  border: 1px solid #a9b2ba;
-  border-radius: 5px;
-  padding: 5px 9px;
-}
-
-button:hover {
-  background-color: #d5dade;
-  border-color: #98a3ac;
-}
-
-button:active {
-  background-color: #bfc7ce;
-}
-
-entry {
-  background-color: #d8dcdf;
-  color: #202428;
-  border: 1px solid #a9b2ba;
-  border-radius: 5px;
-  padding: 5px 7px;
-}
-
-notebook {
-  background-color: #d3d7db;
-  border: 0;
-}
-
-notebook stack,
-notebook > stack,
-stack {
-  background-color: #d3d7db;
-}
-
-notebook > header {
-  background-color: #c0c6cb;
-  border: 0;
-  padding: 1px 4px 0 44px;
-  min-height: 0;
-}
-
-notebook tab,
-notebook tab:hover,
-notebook tab:checked,
-notebook tab:checked:hover {
-  background-color: #cbd1d6;
-  color: #283038;
-  border: 1px solid #aeb7bf;
-  border-bottom: 0;
-  border-radius: 4px 4px 0 0;
-  padding: 0;
-  margin-right: 2px;
-  min-height: 0;
-}
-
-notebook tab box,
-notebook tab label {
-  background-color: transparent;
-  margin: 0;
-  padding: 0;
-}
-
-notebook tab .tab-label {
-  background-color: #cbd1d6;
-  border-radius: 4px 4px 0 0;
-  padding: 2px 6px;
-  min-height: 0;
-}
-
-notebook tab:checked {
-  background-color: #d6dadd;
-  color: #111820;
-}
-
-notebook tab:checked box,
-notebook tab:checked label,
-notebook tab:checked .tab-label {
-  background-color: #d6dadd;
-  border-radius: 4px 4px 0 0;
-}
-
-notebook tab button,
-notebook tab button.tab-close {
-  background-color: transparent;
-  border: 0;
-  border-radius: 3px;
-  margin: 0 0 0 3px;
-  min-height: 16px;
-  min-width: 16px;
-  padding: 0 2px;
-}
-
-notebook tab:checked button {
-  background-color: transparent;
-  border: 0;
-}
-
-notebook tab button:hover {
-  background-color: #b8c2ca;
-  border: 0;
-}
-
-notebook tab:checked button:hover {
-  background-color: #bdc6ce;
-  border: 0;
-}
-
-paned > separator {
-  background-color: #9ea8b0;
-  min-width: 1px;
-  min-height: 1px;
-}
-
-.toolbar {
-  background-color: #b8c0c7;
-  border-bottom: 1px solid #9ea8b0;
-  padding: 6px;
-}
-
-.sidebar {
-  background-color: #b7bec5;
-  border-right: 1px solid #9ea8b0;
-}
-
-.statusbar {
-  background-color: #b8c0c7;
-  border-top: 1px solid #9ea8b0;
-  color: #273038;
-  padding: 5px 8px;
-}
-
-.searchbar {
-  background-color: #c0c6cb;
-  border-top: 1px solid #9ea8b0;
-  padding: 6px;
-}
+paned>separator{background-color:#9ea8b0;min-width:1px;min-height:1px;}
+.toolbar{background-color:#b8c0c7;border-bottom:1px solid #9ea8b0;padding:6px;}
+.sidebar{background-color:#b7bec5;border-right:1px solid #9ea8b0;}
+.statusbar{background-color:#b8c0c7;border-top:1px solid #9ea8b0;color:#273038;padding:5px 8px;}
+.searchbar{background-color:#c0c6cb;border-top:1px solid #9ea8b0;padding:6px;}
