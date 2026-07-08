@@ -109,7 +109,7 @@ lmme_app_free(LmmeApp *app)
 int
 lmme_app_run(int argc, char **argv)
 {
-    GtkApplication *gtk_app = gtk_application_new("org.lmme.LowMemoryMarkdownEditor", G_APPLICATION_FLAGS_NONE);
+    GtkApplication *gtk_app = gtk_application_new("org.lmme.LowMemoryMarkdownEditor", G_APPLICATION_DEFAULT_FLAGS);
     LmmeApp *app = app_new(gtk_app);
     int status = 0;
 

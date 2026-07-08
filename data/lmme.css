@@ -1,79 +1,144 @@
+* {
+  outline-width: 0;
+  box-shadow: none;
+}
+
 window {
-  background: #121212;
-  color: #e6e6e6;
+  background-color: #d7dade;
+  color: #1f2428;
 }
 
 box, paned, notebook, popovermenubar {
-  background: #121212;
-  color: #e6e6e6;
+  background-color: #d7dade;
+  color: #1f2428;
 }
 
-textview, sourceview {
-  background: #151515;
-  color: #e6e6e6;
+popovermenubar {
+  padding: 2px 6px;
+}
+
+scrolledwindow {
+  background-color: #eef0f1;
+  border: 0;
+}
+
+textview,
+sourceview,
+textview text,
+sourceview text {
+  background-color: #f3f4f4;
+  color: #202428;
   font-family: monospace;
   font-size: 14px;
 }
 
+sourceview gutter,
+sourceview gutter cell {
+  background-color: #e4e7e9;
+  color: #7a828a;
+  border: 0;
+}
+
 treeview {
-  background: #111111;
-  color: #dddddd;
+  background-color: #cfd4d8;
+  color: #22282d;
+  border: 0;
 }
 
 treeview:selected {
-  background: #2b4a65;
-  color: #ffffff;
+  background-color: #9fb6c9;
+  color: #101820;
 }
 
 button {
-  background: #202020;
-  color: #eeeeee;
-  border: 1px solid #333333;
-  border-radius: 4px;
-  padding: 4px 8px;
+  background-color: #dfe2e4;
+  color: #202428;
+  border: 1px solid #b9c0c6;
+  border-radius: 5px;
+  padding: 5px 9px;
 }
 
 button:hover {
-  background: #282828;
+  background-color: #e9ebed;
+  border-color: #aeb6bd;
+}
+
+button:active {
+  background-color: #cfd5da;
 }
 
 entry {
-  background: #151515;
-  color: #eeeeee;
-  border: 1px solid #333333;
-  border-radius: 4px;
-  padding: 4px 6px;
+  background-color: #f3f4f4;
+  color: #202428;
+  border: 1px solid #b8c0c7;
+  border-radius: 5px;
+  padding: 5px 7px;
+}
+
+notebook {
+  background-color: #eef0f1;
+  border: 0;
+}
+
+notebook > header {
+  background-color: #d7dade;
+  border: 0;
+  padding: 3px 6px 0 6px;
 }
 
 notebook tab {
-  background: #181818;
-  color: #cccccc;
-  border: 1px solid #2a2a2a;
-  padding: 2px 6px;
+  background-color: #dfe3e6;
+  color: #283038;
+  border: 1px solid #bec5cb;
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+  padding: 4px 8px;
+  margin-right: 3px;
 }
 
 notebook tab:checked {
-  background: #252525;
-  color: #ffffff;
+  background-color: #f3f4f4;
+  color: #111820;
+}
+
+notebook tab button {
+  background-color: transparent;
+  border: 0;
+  padding: 0 3px;
+  margin-left: 4px;
+}
+
+notebook tab button:hover {
+  background-color: #ccd3d9;
+  border: 0;
+}
+
+paned > separator {
+  background-color: #b9c0c6;
+  min-width: 1px;
+  min-height: 1px;
 }
 
 .toolbar {
-  border-bottom: 1px solid #282828;
-  padding: 4px;
+  background-color: #d0d4d8;
+  border-bottom: 1px solid #b8bec4;
+  padding: 6px;
 }
 
 .sidebar {
-  border-right: 1px solid #282828;
+  background-color: #cfd4d8;
+  border-right: 1px solid #b8bec4;
 }
 
 .statusbar {
-  background: #101010;
-  border-top: 1px solid #282828;
-  color: #cfcfcf;
-  padding: 4px 8px;
+  background-color: #cfd4d8;
+  border-top: 1px solid #b8bec4;
+  color: #273038;
+  padding: 5px 8px;
 }
 
 .searchbar {
-  border-top: 1px solid #282828;
-  padding: 4px;
+  background-color: #d7dade;
+  border-top: 1px solid #b8bec4;
+  padding: 6px;
 }

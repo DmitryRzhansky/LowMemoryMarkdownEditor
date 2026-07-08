@@ -107,7 +107,7 @@ lmme_dialog_prompt_text(GtkWindow *parent,
     gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
     gtk_box_append(GTK_BOX(box), label);
 
-    gtk_entry_set_text(GTK_ENTRY(entry), initial_text != NULL ? initial_text : "");
+    gtk_editable_set_text(GTK_EDITABLE(entry), initial_text != NULL ? initial_text : "");
     gtk_widget_set_margin_top(entry, 6);
     gtk_widget_set_margin_bottom(entry, 12);
     gtk_widget_set_margin_start(entry, 12);

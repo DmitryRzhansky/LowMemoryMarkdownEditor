@@ -168,9 +168,9 @@ on_file_monitor_changed(GFileMonitor *monitor,
     gsize length = 0;
     g_autoptr(GError) error = NULL;
     if (g_file_get_contents(doc->path, &contents, &length, &error) && g_utf8_validate(contents, (gssize)length, NULL)) {
-        g_signal_handlers_block_by_func(doc->buffer, on_buffer_changed, doc);
+        g_signal_handler_block(doc->buffer, doc->changed_handler_id);
         gtk_text_buffer_set_text(GTK_TEXT_BUFFER(doc->buffer), contents, (int)length);
-        g_signal_handlers_unblock_by_func(doc->buffer, on_buffer_changed, doc);
+        g_signal_handler_unblock(doc->buffer, doc->changed_handler_id);
         lmme_document_set_save_state(doc, LMME_SAVE_STATE_SAVED);
     }
 }
@@ -203,7 +203,7 @@ document_new(LmmeApp *app, const char *path, const char *contents, const char *r
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(doc->buffer), contents != NULL ? contents : "", -1);
     gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc->buffer), FALSE);
 
-    g_signal_connect(doc->buffer, "changed", G_CALLBACK(on_buffer_changed), doc);
+    doc->changed_handler_id = g_signal_connect(doc->buffer, "changed", G_CALLBACK(on_buffer_changed), doc);
     g_signal_connect(doc->buffer, "notify::cursor-position", G_CALLBACK(on_cursor_moved), doc);
     attach_monitor(doc);
 

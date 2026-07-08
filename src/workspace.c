@@ -2,9 +2,8 @@
 
 #include <errno.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
+#include <gio/gio.h>
 #include <glib/gstdio.h>
 
 static LmmeFileNode *scan_dir(const char *path,
@@ -48,13 +47,20 @@ node_compare(gconstpointer a, gconstpointer b)
 static gboolean
 is_directory_no_follow(const char *path)
 {
-    struct stat st;
+    g_autoptr(GFile) file = g_file_new_for_path(path);
+    g_autoptr(GFileInfo) info = NULL;
 
-    if (lstat(path, &st) != 0) {
+    info = g_file_query_info(file,
+                             G_FILE_ATTRIBUTE_STANDARD_TYPE "," G_FILE_ATTRIBUTE_STANDARD_IS_SYMLINK,
+                             G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS,
+                             NULL,
+                             NULL);
+    if (info == NULL) {
         return FALSE;
     }
 
-    return S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode);
+    return g_file_info_get_file_type(info) == G_FILE_TYPE_DIRECTORY &&
+           !g_file_info_get_is_symlink(info);
 }
 
 static char *
@@ -312,14 +318,7 @@ lmme_workspace_rename_path(const LmmeWorkspace *workspace,
 static gboolean
 delete_path_recursive(const char *path, GError **error)
 {
-    struct stat st;
-
-    if (lstat(path, &st) != 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not inspect item.");
-        return FALSE;
-    }
-
-    if (S_ISDIR(st.st_mode) && !S_ISLNK(st.st_mode)) {
+    if (is_directory_no_follow(path)) {
         g_autoptr(GDir) dir = g_dir_open(path, 0, error);
         const char *name = NULL;
 

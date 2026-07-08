@@ -28,6 +28,7 @@ struct _LmmeDocument {
     LmmeSaveState save_state;
     guint autosave_id;
     guint recovery_id;
+    gulong changed_handler_id;
     GFileMonitor *monitor;
     gint64 last_internal_save_us;
 };

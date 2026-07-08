@@ -6,12 +6,25 @@ GtkWidget *
 lmme_editor_create_view(GtkSourceBuffer **out_buffer, const LmmeConfig *config)
 {
     GtkSourceLanguageManager *manager = gtk_source_language_manager_get_default();
+    GtkSourceStyleSchemeManager *scheme_manager = gtk_source_style_scheme_manager_get_default();
     GtkSourceLanguage *language = gtk_source_language_manager_get_language(manager, "markdown");
+    GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(scheme_manager, "Adwaita");
     GtkSourceBuffer *buffer = language != NULL ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(NULL);
     GtkWidget *view = gtk_source_view_new_with_buffer(buffer);
 
+    if (scheme == NULL) {
+        scheme = gtk_source_style_scheme_manager_get_scheme(scheme_manager, "classic");
+    }
+    if (scheme != NULL) {
+        gtk_source_buffer_set_style_scheme(buffer, scheme);
+    }
+
     gtk_source_view_set_show_line_numbers(GTK_SOURCE_VIEW(view), config->line_numbers);
     gtk_source_view_set_tab_width(GTK_SOURCE_VIEW(view), 4);
+    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(view), 14);
+    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(view), 14);
+    gtk_text_view_set_top_margin(GTK_TEXT_VIEW(view), 10);
+    gtk_text_view_set_bottom_margin(GTK_TEXT_VIEW(view), 10);
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(view), config->word_wrap ? GTK_WRAP_WORD_CHAR : GTK_WRAP_NONE);
     gtk_widget_set_hexpand(view, TRUE);
     gtk_widget_set_vexpand(view, TRUE);

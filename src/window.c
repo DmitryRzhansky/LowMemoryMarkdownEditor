@@ -36,31 +36,31 @@ static void action_insert_image(GSimpleAction *action, GVariant *parameter, gpoi
 static void action_about(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 
 static const GActionEntry app_actions[] = {
-    {"open", action_open, NULL, NULL, NULL},
-    {"save", action_save, NULL, NULL, NULL},
-    {"quit", action_quit, NULL, NULL, NULL},
-    {"new-file", action_new_file, NULL, NULL, NULL},
-    {"new-folder", action_new_folder, NULL, NULL, NULL},
-    {"rename", action_rename, NULL, NULL, NULL},
-    {"delete", action_delete, NULL, NULL, NULL},
-    {"toggle-sidebar", action_toggle_sidebar, NULL, NULL, NULL},
-    {"toggle-preview", action_toggle_preview, NULL, NULL, NULL},
-    {"focus-mode", action_focus_mode, NULL, NULL, NULL},
-    {"close-tab", action_close_tab, NULL, NULL, NULL},
-    {"next-tab", action_next_tab, NULL, NULL, NULL},
-    {"previous-tab", action_previous_tab, NULL, NULL, NULL},
-    {"undo", action_undo, NULL, NULL, NULL},
-    {"redo", action_redo, NULL, NULL, NULL},
-    {"cut", action_cut, NULL, NULL, NULL},
-    {"copy", action_copy, NULL, NULL, NULL},
-    {"paste", action_paste, NULL, NULL, NULL},
-    {"find", action_find, NULL, NULL, NULL},
-    {"replace", action_replace, NULL, NULL, NULL},
-    {"bold", action_bold, NULL, NULL, NULL},
-    {"italic", action_italic, NULL, NULL, NULL},
-    {"insert-link", action_insert_link, NULL, NULL, NULL},
-    {"insert-image", action_insert_image, NULL, NULL, NULL},
-    {"about", action_about, NULL, NULL, NULL},
+    {.name = "open", .activate = action_open},
+    {.name = "save", .activate = action_save},
+    {.name = "quit", .activate = action_quit},
+    {.name = "new-file", .activate = action_new_file},
+    {.name = "new-folder", .activate = action_new_folder},
+    {.name = "rename", .activate = action_rename},
+    {.name = "delete", .activate = action_delete},
+    {.name = "toggle-sidebar", .activate = action_toggle_sidebar},
+    {.name = "toggle-preview", .activate = action_toggle_preview},
+    {.name = "focus-mode", .activate = action_focus_mode},
+    {.name = "close-tab", .activate = action_close_tab},
+    {.name = "next-tab", .activate = action_next_tab},
+    {.name = "previous-tab", .activate = action_previous_tab},
+    {.name = "undo", .activate = action_undo},
+    {.name = "redo", .activate = action_redo},
+    {.name = "cut", .activate = action_cut},
+    {.name = "copy", .activate = action_copy},
+    {.name = "paste", .activate = action_paste},
+    {.name = "find", .activate = action_find},
+    {.name = "replace", .activate = action_replace},
+    {.name = "bold", .activate = action_bold},
+    {.name = "italic", .activate = action_italic},
+    {.name = "insert-link", .activate = action_insert_link},
+    {.name = "insert-image", .activate = action_insert_image},
+    {.name = "about", .activate = action_about},
 };
 
 static void
@@ -771,8 +771,8 @@ action_undo(GSimpleAction *action, GVariant *parameter, gpointer user_data)
     LmmeDocument *doc = lmme_tabs_get_active(user_data);
     (void)action;
     (void)parameter;
-    if (doc != NULL && gtk_source_buffer_can_undo(doc->buffer)) {
-        gtk_source_buffer_undo(doc->buffer);
+    if (doc != NULL && gtk_text_buffer_get_can_undo(GTK_TEXT_BUFFER(doc->buffer))) {
+        gtk_text_buffer_undo(GTK_TEXT_BUFFER(doc->buffer));
     }
 }
 
@@ -782,8 +782,8 @@ action_redo(GSimpleAction *action, GVariant *parameter, gpointer user_data)
     LmmeDocument *doc = lmme_tabs_get_active(user_data);
     (void)action;
     (void)parameter;
-    if (doc != NULL && gtk_source_buffer_can_redo(doc->buffer)) {
-        gtk_source_buffer_redo(doc->buffer);
+    if (doc != NULL && gtk_text_buffer_get_can_redo(GTK_TEXT_BUFFER(doc->buffer))) {
+        gtk_text_buffer_redo(GTK_TEXT_BUFFER(doc->buffer));
     }
 }
 

@@ -11,6 +11,11 @@ project(
 
 cc = meson.get_compiler('c')
 
+pkg_config = find_program('pkg-config', required: false)
+if not pkg_config.found()
+  error('pkg-config was not found. Install it first, for example: sudo apt install pkg-config. If your distro uses pkgconf, install pkgconf and make sure /usr/bin/pkg-config exists, then remove the failed build directory and rerun meson setup build.')
+endif
+
 gtk_dep = dependency('gtk4')
 gtksource_dep = dependency('gtksourceview-5')
 cmark_dep = dependency(
