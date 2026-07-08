@@ -36,6 +36,13 @@ typedef struct _LmmeApp {
     gboolean selected_is_markdown;
     gboolean selected_is_image;
 
+    char *tree_context_path;
+    LmmeFileKind tree_context_kind;
+    gboolean tree_context_is_dir;
+    gboolean tree_context_is_markdown;
+    gboolean tree_context_is_image;
+    gboolean tree_context_is_empty_area;
+
     /* TRUE means editable inline preview mode, not a separate preview widget. */
     gboolean preview_enabled;
     gboolean focus_mode;

@@ -13,6 +13,7 @@ Small Linux-only GTK Markdown editor focused on low memory usage and local folde
 - supports editor font zoom with Ctrl++, Ctrl+-, Ctrl+0, and numpad variants
 - supports image insertion into a workspace-level `img` folder
 - uses lightweight system GTK symbolic icons for toolbar, tabs, and file tree
+- provides a right-click context menu for workspace file tree actions
 - uses a compact light-gray GTK theme
 - stores basic config in `~/.config/lmme/config.ini`
 

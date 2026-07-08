@@ -43,6 +43,19 @@ static void action_italic(GSimpleAction *action, GVariant *parameter, gpointer u
 static void action_insert_link(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 static void action_insert_image(GSimpleAction *action, GVariant *parameter, gpointer user_data);
 static void action_about(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_tree_new_file(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_tree_new_folder(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_tree_rename(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_tree_delete(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_tree_open(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_tree_close_tab(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_tree_copy_relative_path(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_tree_copy_full_path(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_tree_copy_markdown_image_link(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void action_tree_open_containing_folder(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void on_tree_right_click(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data);
+
+static GtkWidget *tree_context_popover;
 
 static const GActionEntry app_actions[] = {
     {.name = "open", .activate = action_open},
@@ -79,6 +92,16 @@ static const GActionEntry app_actions[] = {
     {.name = "insert-link", .activate = action_insert_link},
     {.name = "insert-image", .activate = action_insert_image},
     {.name = "about", .activate = action_about},
+    {.name = "tree-new-file", .activate = action_tree_new_file},
+    {.name = "tree-new-folder", .activate = action_tree_new_folder},
+    {.name = "tree-rename", .activate = action_tree_rename},
+    {.name = "tree-delete", .activate = action_tree_delete},
+    {.name = "tree-open", .activate = action_tree_open},
+    {.name = "tree-close-tab", .activate = action_tree_close_tab},
+    {.name = "tree-copy-relative-path", .activate = action_tree_copy_relative_path},
+    {.name = "tree-copy-full-path", .activate = action_tree_copy_full_path},
+    {.name = "tree-copy-markdown-image-link", .activate = action_tree_copy_markdown_image_link},
+    {.name = "tree-open-containing-folder", .activate = action_tree_open_containing_folder},
 };
 
 static void
@@ -282,6 +305,294 @@ on_tree_row_activated(GtkTreeView *tree_view,
             lmme_dialog_error(GTK_WINDOW(app->window), "Could not read file.", error != NULL ? error->message : NULL);
         }
     }
+}
+
+static void
+tree_context_clear(LmmeApp *app)
+{
+    g_clear_pointer(&app->tree_context_path, g_free);
+    app->tree_context_kind = LMME_FILE_KIND_OTHER;
+    app->tree_context_is_dir = FALSE;
+    app->tree_context_is_markdown = FALSE;
+    app->tree_context_is_image = FALSE;
+    app->tree_context_is_empty_area = FALSE;
+}
+
+static void
+tree_context_set(LmmeApp *app, const char *path, LmmeFileKind kind, gboolean empty_area)
+{
+    tree_context_clear(app);
+    app->tree_context_is_empty_area = empty_area;
+
+    if (empty_area || path == NULL) {
+        return;
+    }
+
+    app->tree_context_path = g_strdup(path);
+    app->tree_context_kind = kind;
+    app->tree_context_is_dir = kind == LMME_FILE_KIND_DIRECTORY;
+    app->tree_context_is_markdown = kind == LMME_FILE_KIND_MARKDOWN;
+    app->tree_context_is_image = kind == LMME_FILE_KIND_IMAGE;
+}
+
+static void
+sync_selected_path_from_tree(LmmeApp *app, const char *path, LmmeFileKind kind)
+{
+    g_clear_pointer(&app->selected_path, g_free);
+    app->selected_is_dir = FALSE;
+    app->selected_is_markdown = FALSE;
+    app->selected_is_image = FALSE;
+
+    if (path == NULL) {
+        return;
+    }
+
+    app->selected_path = g_strdup(path);
+    app->selected_is_dir = kind == LMME_FILE_KIND_DIRECTORY;
+    app->selected_is_markdown = kind == LMME_FILE_KIND_MARKDOWN;
+    app->selected_is_image = kind == LMME_FILE_KIND_IMAGE;
+}
+
+static gboolean
+tree_select_path_at_position(LmmeApp *app, double x, double y)
+{
+    GtkTreeView *tree_view = GTK_TREE_VIEW(app->tree_view);
+    GtkTreeSelection *selection = gtk_tree_view_get_selection(tree_view);
+    GtkTreePath *path = NULL;
+    GtkTreeViewColumn *column = NULL;
+    int cell_x = 0;
+    int cell_y = 0;
+    GtkTreeModel *model = NULL;
+    GtkTreeIter iter;
+    int kind = 0;
+    g_autofree char *file_path = NULL;
+
+    if (!gtk_tree_view_get_path_at_pos(tree_view, (int)x, (int)y, &path, &column, &cell_x, &cell_y)) {
+        gtk_tree_selection_unselect_all(selection);
+        sync_selected_path_from_tree(app, NULL, LMME_FILE_KIND_OTHER);
+        tree_context_set(app, NULL, LMME_FILE_KIND_OTHER, TRUE);
+        return FALSE;
+    }
+
+    gtk_tree_selection_select_path(selection, path);
+    model = gtk_tree_view_get_model(tree_view);
+    if (!gtk_tree_model_get_iter(model, &iter, path)) {
+        gtk_tree_path_free(path);
+        return FALSE;
+    }
+
+    gtk_tree_model_get(model,
+                       &iter,
+                       LMME_TREE_COL_PATH,
+                       &file_path,
+                       LMME_TREE_COL_KIND,
+                       &kind,
+                       -1);
+    gtk_tree_path_free(path);
+
+    sync_selected_path_from_tree(app, file_path, (LmmeFileKind)kind);
+    tree_context_set(app, file_path, (LmmeFileKind)kind, FALSE);
+    return TRUE;
+}
+
+static char *
+tree_context_relative_path(LmmeApp *app)
+{
+    if (app == NULL || app->workspace == NULL || app->tree_context_path == NULL) {
+        return NULL;
+    }
+
+    return lmme_path_relative_to(app->workspace->path, app->tree_context_path);
+}
+
+static GMenuModel *
+create_tree_context_menu_model(LmmeApp *app)
+{
+    GMenu *menu = g_menu_new();
+    gboolean has_workspace = app != NULL && app->workspace != NULL;
+    gboolean is_empty = app != NULL && app->tree_context_is_empty_area;
+    gboolean is_dir = app != NULL && app->tree_context_is_dir;
+    gboolean is_markdown = app != NULL && app->tree_context_is_markdown;
+    gboolean is_image = app != NULL && app->tree_context_is_image;
+    gboolean tab_open = FALSE;
+    gboolean is_workspace_root = FALSE;
+
+    if (app == NULL) {
+        return G_MENU_MODEL(menu);
+    }
+
+    if (has_workspace && app->tree_context_path != NULL) {
+        is_workspace_root = g_strcmp0(app->tree_context_path, app->workspace->path) == 0;
+        tab_open = lmme_tabs_find_by_path(app, app->tree_context_path) != NULL;
+    }
+
+    if (is_empty) {
+        if (has_workspace) {
+            g_menu_append(menu, "New Markdown File", "app.tree-new-file");
+            g_menu_append(menu, "New Folder", "app.tree-new-folder");
+        }
+        return G_MENU_MODEL(menu);
+    }
+
+    if (is_markdown) {
+        GMenu *open_section = g_menu_new();
+
+        g_menu_append(open_section, "Open", "app.tree-open");
+        if (tab_open) {
+            g_menu_append(open_section, "Close Tab", "app.tree-close-tab");
+        }
+        g_menu_append_section(menu, NULL, G_MENU_MODEL(open_section));
+        g_object_unref(open_section);
+    }
+
+    if (has_workspace) {
+        GMenu *create_section = g_menu_new();
+
+        g_menu_append(create_section, "New Markdown File", "app.tree-new-file");
+        g_menu_append(create_section, "New Folder", "app.tree-new-folder");
+        g_menu_append_section(menu, NULL, G_MENU_MODEL(create_section));
+        g_object_unref(create_section);
+    }
+
+    if (is_dir || is_markdown || is_image) {
+        GMenu *edit_section = g_menu_new();
+
+        g_menu_append(edit_section, "Rename", "app.tree-rename");
+        if (!is_workspace_root) {
+            g_menu_append(edit_section, "Delete", "app.tree-delete");
+        }
+        g_menu_append_section(menu, NULL, G_MENU_MODEL(edit_section));
+        g_object_unref(edit_section);
+    }
+
+    if (app->tree_context_path != NULL) {
+        GMenu *copy_section = g_menu_new();
+        GMenu *reveal_section = g_menu_new();
+
+        g_menu_append(copy_section, "Copy Relative Path", "app.tree-copy-relative-path");
+        g_menu_append(copy_section, "Copy Full Path", "app.tree-copy-full-path");
+        if (is_image) {
+            g_menu_append(copy_section, "Copy Markdown Image Link", "app.tree-copy-markdown-image-link");
+        }
+        g_menu_append_section(menu, NULL, G_MENU_MODEL(copy_section));
+        g_object_unref(copy_section);
+
+        g_menu_append(reveal_section, "Open Containing Folder", "app.tree-open-containing-folder");
+        g_menu_append_section(menu, NULL, G_MENU_MODEL(reveal_section));
+        g_object_unref(reveal_section);
+    }
+
+    return G_MENU_MODEL(menu);
+}
+
+
+static void
+tree_context_popover_prepare_widget(GtkWidget *widget)
+{
+    GtkWidget *child;
+
+    if (widget == NULL) {
+        return;
+    }
+
+    if (g_strcmp0(G_OBJECT_TYPE_NAME(widget), "GtkModelButton") == 0) {
+        gtk_widget_set_hexpand(widget, TRUE);
+        gtk_widget_set_halign(widget, GTK_ALIGN_FILL);
+    }
+
+    for (child = gtk_widget_get_first_child(widget); child != NULL; child = gtk_widget_get_next_sibling(child)) {
+        tree_context_popover_prepare_widget(child);
+    }
+}
+
+static void
+tree_context_popover_configure(GtkWidget *popover)
+{
+    GtkWidget *sw = NULL;
+
+    if (popover == NULL) {
+        return;
+    }
+
+    sw = gtk_popover_get_child(GTK_POPOVER(popover));
+    if (sw != NULL && GTK_IS_SCROLLED_WINDOW(sw)) {
+        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(sw), GTK_POLICY_NEVER, GTK_POLICY_NEVER);
+        gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(sw), TRUE);
+        gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(sw), TRUE);
+        tree_context_popover_prepare_widget(sw);
+    }
+}
+
+static GtkWidget *
+get_tree_context_popover(void)
+{
+    if (tree_context_popover == NULL) {
+        g_autoptr(GMenu) empty_menu = g_menu_new();
+
+        tree_context_popover = gtk_popover_menu_new_from_model(G_MENU_MODEL(empty_menu));
+        gtk_popover_set_has_arrow(GTK_POPOVER(tree_context_popover), FALSE);
+        gtk_popover_set_autohide(GTK_POPOVER(tree_context_popover), TRUE);
+        tree_context_popover_configure(tree_context_popover);
+    }
+
+    return tree_context_popover;
+}
+
+static void
+on_tree_right_click(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    GtkWidget *popover = NULL;
+    GtkWidget *anchor = NULL;
+    GdkRectangle rect;
+    graphene_point_t src_point;
+    graphene_point_t dest_point;
+    (void)gesture;
+
+    if (app == NULL || app->tree_view == NULL || app->window == NULL || app->root_box == NULL) {
+        return;
+    }
+
+    if (n_press != 1) {
+        return;
+    }
+
+    tree_select_path_at_position(app, x, y);
+
+    g_autoptr(GMenuModel) menu_model = create_tree_context_menu_model(app);
+    if (g_menu_model_get_n_items(menu_model) == 0) {
+        return;
+    }
+
+    popover = get_tree_context_popover();
+    gtk_popover_menu_set_menu_model(GTK_POPOVER_MENU(popover), menu_model);
+    tree_context_popover_configure(popover);
+
+    anchor = app->root_box;
+    if (gtk_widget_get_parent(popover) != anchor) {
+        if (gtk_widget_get_parent(popover) != NULL) {
+            gtk_widget_unparent(popover);
+        }
+        gtk_widget_set_parent(popover, anchor);
+    }
+
+    if (gtk_widget_get_visible(popover)) {
+        gtk_popover_popdown(GTK_POPOVER(popover));
+    }
+
+    graphene_point_init(&src_point, (float)x, (float)y);
+    if (!gtk_widget_compute_point(app->tree_view, anchor, &src_point, &dest_point)) {
+        return;
+    }
+
+    rect.x = (int)dest_point.x;
+    rect.y = (int)dest_point.y;
+    rect.width = 1;
+    rect.height = 1;
+
+    gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
+    gtk_popover_popup(GTK_POPOVER(popover));
+    gtk_popover_present(GTK_POPOVER(popover));
 }
 
 static void
@@ -518,6 +829,12 @@ lmme_window_build(LmmeApp *app)
     GtkTreeSelection *selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(app->tree_view));
     g_signal_connect(selection, "changed", G_CALLBACK(on_tree_selection_changed), app);
     g_signal_connect(app->tree_view, "row-activated", G_CALLBACK(on_tree_row_activated), app);
+
+    GtkGesture *tree_context_gesture = gtk_gesture_click_new();
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(tree_context_gesture), GDK_BUTTON_SECONDARY);
+    g_signal_connect(tree_context_gesture, "pressed", G_CALLBACK(on_tree_right_click), app);
+    gtk_widget_add_controller(app->tree_view, GTK_EVENT_CONTROLLER(tree_context_gesture));
+
     g_signal_connect(app->notebook, "switch-page", G_CALLBACK(on_notebook_switch_page), app);
 
     gtk_widget_set_visible(app->toolbar, app->config.show_toolbar && !app->focus_mode);
@@ -1246,4 +1563,148 @@ action_about(GSimpleAction *action, GVariant *parameter, gpointer user_data)
     lmme_dialog_info(GTK_WINDOW(app->window),
                      "LowMemoryMarkdownEditor",
                      "Small Linux-only GTK Markdown editor for local folders.");
+}
+
+static void
+action_tree_new_file(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    action_new_file(action, parameter, user_data);
+}
+
+static void
+action_tree_new_folder(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    action_new_folder(action, parameter, user_data);
+}
+
+static void
+action_tree_rename(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    action_rename(action, parameter, user_data);
+}
+
+static void
+action_tree_delete(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    action_delete(action, parameter, user_data);
+}
+
+static void
+action_tree_open(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    g_autoptr(GError) error = NULL;
+    (void)action;
+    (void)parameter;
+
+    if (app == NULL || app->tree_context_path == NULL || !app->tree_context_is_markdown) {
+        return;
+    }
+
+    if (!lmme_tabs_open_file(app, app->tree_context_path, &error)) {
+        lmme_dialog_error(GTK_WINDOW(app->window), "Could not read file.", error != NULL ? error->message : NULL);
+    }
+}
+
+static void
+action_tree_close_tab(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    LmmeDocument *doc = NULL;
+    (void)action;
+    (void)parameter;
+
+    if (app == NULL || app->tree_context_path == NULL) {
+        return;
+    }
+
+    doc = lmme_tabs_find_by_path(app, app->tree_context_path);
+    if (doc == NULL) {
+        return;
+    }
+
+    lmme_tabs_close_document(app, doc);
+}
+
+static void
+action_tree_copy_relative_path(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    g_autofree char *relative_path = NULL;
+    GdkClipboard *clipboard = NULL;
+    (void)action;
+    (void)parameter;
+
+    relative_path = tree_context_relative_path(app);
+    if (relative_path == NULL) {
+        return;
+    }
+
+    clipboard = gtk_widget_get_clipboard(app->window);
+    gdk_clipboard_set_text(clipboard, relative_path);
+}
+
+static void
+action_tree_copy_full_path(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    GdkClipboard *clipboard = NULL;
+    (void)action;
+    (void)parameter;
+
+    if (app == NULL || app->tree_context_path == NULL) {
+        return;
+    }
+
+    clipboard = gtk_widget_get_clipboard(app->window);
+    gdk_clipboard_set_text(clipboard, app->tree_context_path);
+}
+
+static void
+action_tree_copy_markdown_image_link(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    g_autofree char *relative_path = NULL;
+    g_autofree char *link = NULL;
+    GdkClipboard *clipboard = NULL;
+    (void)action;
+    (void)parameter;
+
+    if (app == NULL || !app->tree_context_is_image || app->tree_context_path == NULL) {
+        return;
+    }
+
+    relative_path = tree_context_relative_path(app);
+    if (relative_path == NULL) {
+        return;
+    }
+
+    link = g_strdup_printf("![](%s)", relative_path);
+    clipboard = gtk_widget_get_clipboard(app->window);
+    gdk_clipboard_set_text(clipboard, link);
+}
+
+static void
+action_tree_open_containing_folder(GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    g_autofree char *target_dir = NULL;
+    g_autoptr(GFile) file = NULL;
+    g_autofree char *uri = NULL;
+    (void)action;
+    (void)parameter;
+
+    if (app == NULL || app->tree_context_path == NULL || app->tree_context_is_empty_area) {
+        return;
+    }
+
+    if (app->tree_context_is_dir) {
+        target_dir = g_strdup(app->tree_context_path);
+    } else {
+        target_dir = g_path_get_dirname(app->tree_context_path);
+    }
+
+    file = g_file_new_for_path(target_dir);
+    uri = g_file_get_uri(file);
+    gtk_show_uri(GTK_WINDOW(app->window), uri, GDK_CURRENT_TIME);
 }

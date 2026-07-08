@@ -94,6 +94,7 @@ lmme_app_free(LmmeApp *app)
     }
     g_clear_pointer(&app->workspace, lmme_workspace_free);
     g_clear_pointer(&app->selected_path, g_free);
+    g_clear_pointer(&app->tree_context_path, g_free);
     g_clear_pointer(&app->config_path, g_free);
     lmme_config_clear(&app->config);
     g_free(app);

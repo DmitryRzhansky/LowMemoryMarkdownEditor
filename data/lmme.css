@@ -10,17 +10,23 @@ popovermenubar button:hover,popovermenubar menubutton>button:hover{background-co
 popover,popover contents{background-color:#d3d7db;color:#1f2428;border:1px solid #9ea8b0;border-radius:0;}
 popover contents{padding:0;}
 popover box{background-color:transparent;color:#1f2428;}
-popover modelbutton{background-color:transparent;color:#1f2428;border:0;border-radius:0;padding:4px 10px;min-height:22px;}
+popover modelbutton{background-color:transparent;color:#1f2428;border:0;border-radius:0;margin:0;padding:4px 10px;min-height:22px;}
 popover modelbutton:hover{background-color:#c2cbd2;color:#111820;}
 popover modelbutton:active,popover modelbutton:checked{background-color:#b7c2ca;color:#111820;}
-popover modelbutton label,popover modelbutton:hover label,popover modelbutton:active label,popover modelbutton:checked label{background-color:transparent;color:#1f2428;}
-popover.menu scrolledwindow{border:0;min-height:0;}
-popover.menu scrolledwindow scrollbar.vertical{min-width:0;opacity:0;border:0;}
-popover.menu scrolledwindow scrollbar.horizontal{min-height:0;opacity:0;border:0;}
-popover.menu listview row{padding:4px 10px;min-height:22px;}
-popover.menu listview row:hover{background-color:#c2cbd2;color:#111820;}
-popover.menu listview row:selected{background-color:#b7c2ca;color:#111820;}
-popover.menu listview row label{background-color:transparent;color:inherit;}
+popover modelbutton label,popover modelbutton:hover label,popover modelbutton:active label,popover modelbutton:checked label{background-color:transparent;color:inherit;}
+popover.menu{padding:0;}
+popover.menu scrolledwindow,popover.menu scrolledwindow>viewport,popover.menu stack{border:0;margin:0;padding:0;min-height:0;background-color:transparent;}
+popover.menu scrolledwindow scrollbar.vertical,popover.menu scrolledwindow scrollbar.horizontal{min-width:0;min-height:0;opacity:0;border:0;}
+popover.menu box{margin:0;padding:0;background-color:transparent;}
+popover.menu modelbutton.flat{margin:0;padding:4px 10px;min-height:22px;border:0;border-radius:0;background-color:transparent;color:#1f2428;box-shadow:none;}
+popover.menu modelbutton.flat:hover{background-color:#c2cbd2;color:#111820;}
+popover.menu modelbutton.flat:active,popover.menu modelbutton.flat:checked{background-color:#b7c2ca;color:#111820;}
+popover.menu modelbutton.flat label,popover.menu modelbutton.flat:hover label,popover.menu modelbutton.flat:active label,popover.menu modelbutton.flat:checked label{background-color:transparent;color:inherit;}
+
+tooltip{padding:4px 8px;border:0;border-radius:3px;box-shadow:none;}
+tooltip.background{background-color:#d3d7db;color:#1f2428;border:1px solid #9ea8b0;border-radius:3px;box-shadow:none;}
+tooltip decoration{background-color:transparent;}
+tooltip box,tooltip label,tooltip *{background-color:transparent;color:#1f2428;}
 
 scrolledwindow{background-color:#d3d7db;border:0;}
 textview,sourceview,textview text,sourceview text,.editor-view,.editor-view text{background-color:#d6dadd;color:#202428;}
