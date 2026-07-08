@@ -9,7 +9,7 @@ Small Linux-only GTK Markdown editor focused on low memory usage and local folde
 - edits Markdown files with GtkSourceView
 - supports tabs
 - supports autosave and manual save
-- toggles between source editing and inline rendered preview
+- toggles between Source and single-pane Editable Preview styling
 - supports image insertion into a workspace-level `img` folder
 - uses a compact light-gray GTK theme
 - stores basic config in `~/.config/lmme/config.ini`
@@ -69,7 +69,7 @@ meson test -C build
 
 UI language is English only.
 Primary target is MX Linux / Debian-based systems.
-Preview is a basic native Markdown preview, not full GitHub Markdown rendering.
+Editable Preview is a same-buffer styling layer for Markdown source, not WYSIWYG or full GitHub Markdown rendering.
 
 ## License
 

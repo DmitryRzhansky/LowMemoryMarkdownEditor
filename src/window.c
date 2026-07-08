@@ -236,8 +236,11 @@ on_notebook_switch_page(GtkNotebook *notebook, GtkWidget *page, guint page_num, 
     (void)page;
     (void)page_num;
 
-    lmme_window_update_status(app);
-    lmme_window_schedule_preview(app);
+    if (app->preview_enabled) {
+        lmme_window_refresh_preview_now(app);
+    } else {
+        lmme_window_update_status(app);
+    }
 }
 
 static void
@@ -476,7 +479,7 @@ lmme_window_update_status(LmmeApp *app)
                                               column,
                                               words,
                                               lmme_document_save_state_label(doc),
-                                              app->preview_enabled ? "Preview" : "Editor");
+                                              app->preview_enabled ? "Editable Preview" : "Source");
     gtk_label_set_text(GTK_LABEL(app->status_label), status);
 }
 
@@ -486,19 +489,30 @@ lmme_window_set_status_error(LmmeApp *app, const char *message)
     gtk_label_set_text(GTK_LABEL(app->status_label), message != NULL ? message : "Error");
 }
 
+static void
+report_preview_result(LmmeApp *app, LmmePreviewApplyResult result)
+{
+    switch (result) {
+    case LMME_PREVIEW_APPLY_SKIPPED_LARGE_FILE:
+        lmme_window_set_status_error(app, "Preview styling skipped for large file");
+        break;
+    case LMME_PREVIEW_APPLY_FAILED:
+        lmme_window_set_status_error(app, "Preview styling failed");
+        break;
+    case LMME_PREVIEW_APPLY_OK:
+    default:
+        lmme_window_update_status(app);
+        break;
+    }
+}
+
 static gboolean
 preview_timeout_cb(gpointer user_data)
 {
     LmmeApp *app = user_data;
-    LmmeDocument *doc = lmme_tabs_get_active(app);
 
     app->preview_timeout_id = 0;
-    if (!app->preview_enabled || doc == NULL) {
-        return G_SOURCE_REMOVE;
-    }
-
-    g_autofree char *text = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
-    lmme_preview_set_markdown(doc->preview_view, text, app->config.preview_hide_frontmatter);
+    lmme_window_refresh_preview_now(app);
     return G_SOURCE_REMOVE;
 }
 
@@ -518,18 +532,48 @@ lmme_window_schedule_preview(LmmeApp *app)
 }
 
 void
-lmme_window_toggle_preview(LmmeApp *app)
+lmme_window_refresh_preview_now(LmmeApp *app)
 {
-    app->preview_enabled = !app->preview_enabled;
-    lmme_tabs_set_preview_visible(app, app->preview_enabled);
+    LmmeDocument *doc = NULL;
+    LmmePreviewApplyResult result = LMME_PREVIEW_APPLY_OK;
+
+    if (app == NULL) {
+        return;
+    }
+
     if (app->preview_timeout_id != 0) {
         g_source_remove(app->preview_timeout_id);
         app->preview_timeout_id = 0;
     }
-    if (app->preview_enabled) {
-        (void)preview_timeout_cb(app);
+
+    if (!app->preview_enabled) {
+        lmme_window_update_status(app);
+        return;
     }
-    lmme_window_update_status(app);
+
+    doc = lmme_tabs_get_active(app);
+    if (doc == NULL) {
+        lmme_window_update_status(app);
+        return;
+    }
+
+    result = lmme_document_set_preview_visible(doc, TRUE);
+    report_preview_result(app, result);
+}
+
+void
+lmme_window_toggle_preview(LmmeApp *app)
+{
+    LmmePreviewApplyResult result = LMME_PREVIEW_APPLY_OK;
+
+    app->preview_enabled = !app->preview_enabled;
+    if (app->preview_timeout_id != 0) {
+        g_source_remove(app->preview_timeout_id);
+        app->preview_timeout_id = 0;
+    }
+
+    result = lmme_tabs_set_preview_visible(app, app->preview_enabled);
+    report_preview_result(app, result);
 }
 
 static char *

@@ -3,6 +3,7 @@ test_sources = {
   'test_config': 'test_config.c',
   'test_markdown': 'test_markdown.c',
   'test_autosave': 'test_autosave.c',
+  'test_preview_style': 'test_preview_style.c',
 }
 
 foreach test_name, test_source : test_sources

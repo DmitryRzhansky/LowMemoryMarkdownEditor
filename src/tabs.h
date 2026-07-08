@@ -5,6 +5,7 @@
 #include <gtk/gtk.h>
 
 #include "app.h"
+#include "preview.h"
 
 typedef enum {
     LMME_SAVE_STATE_SAVED = 0,
@@ -20,9 +21,6 @@ struct _LmmeDocument {
 
     GtkWidget *source_view;
     GtkWidget *scroller;
-    GtkWidget *source_scroller;
-    GtkWidget *preview_view;
-    GtkWidget *preview_scroller;
     GtkSourceBuffer *buffer;
     GtkWidget *tab_box;
     GtkWidget *title_label;
@@ -50,7 +48,7 @@ GPtrArray *lmme_tabs_open_paths(LmmeApp *app);
 void lmme_document_free(LmmeDocument *doc);
 void lmme_document_set_save_state(LmmeDocument *doc, LmmeSaveState state);
 const char *lmme_document_save_state_label(const LmmeDocument *doc);
-void lmme_document_set_preview_visible(LmmeDocument *doc, gboolean visible);
-void lmme_tabs_set_preview_visible(LmmeApp *app, gboolean visible);
+LmmePreviewApplyResult lmme_document_set_preview_visible(LmmeDocument *doc, gboolean visible);
+LmmePreviewApplyResult lmme_tabs_set_preview_visible(LmmeApp *app, gboolean visible);
 
 #endif

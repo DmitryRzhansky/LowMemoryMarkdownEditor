@@ -64,6 +64,7 @@ core_sources = [
   'src/editor.c',
   'src/tabs.c',
   'src/preview.c',
+  'src/preview_style.c',
   'src/image_insert.c',
   'src/markdown.c',
   'src/autosave.c',

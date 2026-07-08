@@ -35,6 +35,7 @@ typedef struct _LmmeApp {
     gboolean selected_is_markdown;
     gboolean selected_is_image;
 
+    /* TRUE means editable inline preview mode, not a separate preview widget. */
     gboolean preview_enabled;
     gboolean focus_mode;
     guint preview_timeout_id;

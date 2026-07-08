@@ -78,6 +78,27 @@ test_invalid_config_falls_back(void)
     g_rmdir(dir);
 }
 
+static void
+test_preview_delay_is_clamped(void)
+{
+    LmmeConfig config;
+    g_autofree char *dir = g_dir_make_tmp("lmme-test-config-XXXXXX", NULL);
+    g_autofree char *path = g_build_filename(dir, "config.ini", NULL);
+
+    g_assert_true(g_file_set_contents(path, "[preview]\nupdate_delay_ms=10\n", -1, NULL));
+    g_assert_true(lmme_config_load(&config, path, NULL));
+    g_assert_cmpuint(config.preview_update_delay_ms, ==, 150);
+    lmme_config_clear(&config);
+
+    g_assert_true(g_file_set_contents(path, "[preview]\nupdate_delay_ms=999\n", -1, NULL));
+    g_assert_true(lmme_config_load(&config, path, NULL));
+    g_assert_cmpuint(config.preview_update_delay_ms, ==, 500);
+    lmme_config_clear(&config);
+
+    g_remove(path);
+    g_rmdir(dir);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -86,5 +107,6 @@ main(int argc, char **argv)
     g_test_add_func("/config/missing", test_missing_config_loads_defaults);
     g_test_add_func("/config/roundtrip", test_save_load_roundtrip);
     g_test_add_func("/config/invalid", test_invalid_config_falls_back);
+    g_test_add_func("/config/preview-delay-clamp", test_preview_delay_is_clamped);
     return g_test_run();
 }

@@ -21,6 +21,7 @@ typedef struct {
     guint autosave_delay_ms;
 
     gboolean preview_enabled;
+    /* Legacy key. Kept for config compatibility. Editable preview is single-pane. */
     double preview_split_ratio;
     guint preview_update_delay_ms;
     gboolean preview_hide_frontmatter;

@@ -17,7 +17,7 @@ popover modelbutton label,popover modelbutton:hover label,popover modelbutton:ac
 
 scrolledwindow{background-color:#d3d7db;border:0;}
 textview,sourceview,textview text,sourceview text,.editor-view,.editor-view text{background-color:#d6dadd;color:#202428;font-family:monospace;font-size:14px;}
-.preview-view,.preview-view text{background-color:#d3d7db;color:#22282d;font-family:sans-serif;font-size:15px;}
+.editor-view.preview-edit-mode,.editor-view.preview-edit-mode text{background-color:#d6dadd;color:#202428;}
 sourceview gutter,sourceview gutter cell,sourceview gutter>*,sourceview border,sourceview>border,sourceview gutterrenderer,.editor-view gutter,.editor-view gutter cell,.editor-view border,.editor-view>border{background-color:#c7cdd2;color:#66717a;border:0;}
 
 treeview{background-color:#b7bec5;color:#22282d;border:0;}

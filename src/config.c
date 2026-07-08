@@ -26,6 +26,18 @@ get_uint(GKeyFile *key, const char *group, const char *name, guint fallback)
     return value > 0 ? (guint)value : fallback;
 }
 
+static guint
+clamp_uint(guint value, guint min, guint max)
+{
+    if (value < min) {
+        return min;
+    }
+    if (value > max) {
+        return max;
+    }
+    return value;
+}
+
 static double
 get_double(GKeyFile *key, const char *group, const char *name, double fallback)
 {
@@ -125,7 +137,7 @@ lmme_config_load(LmmeConfig *config, const char *path, GError **error)
 
     config->preview_enabled = get_boolean(key, "preview", "enabled", FALSE);
     config->preview_split_ratio = get_double(key, "preview", "split_ratio", 0.45);
-    config->preview_update_delay_ms = get_uint(key, "preview", "update_delay_ms", 250);
+    config->preview_update_delay_ms = clamp_uint(get_uint(key, "preview", "update_delay_ms", 250), 150, 500);
     config->preview_hide_frontmatter = get_boolean(key, "preview", "hide_frontmatter", TRUE);
 
     config->sidebar_width = get_integer(key, "ui", "sidebar_width", 260);

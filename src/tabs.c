@@ -10,6 +10,7 @@
 
 static void on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data);
 static void on_cursor_moved(GObject *object, GParamSpec *pspec, gpointer user_data);
+static LmmePreviewApplyResult apply_document_preview_state(LmmeDocument *doc, gboolean visible);
 
 const char *
 lmme_document_save_state_label(const LmmeDocument *doc)
@@ -34,8 +35,13 @@ lmme_document_save_state_label(const LmmeDocument *doc)
 static void
 update_tab_title(LmmeDocument *doc)
 {
+    if (doc == NULL || doc->title_label == NULL) {
+        return;
+    }
+
     g_autofree char *base = g_path_get_basename(doc->path);
     g_autofree char *title = doc->modified ? g_strdup_printf("● %s", base) : g_strdup(base);
+
     gtk_label_set_text(GTK_LABEL(doc->title_label), title);
 }
 
@@ -175,6 +181,9 @@ on_file_monitor_changed(GFileMonitor *monitor,
         gtk_text_buffer_set_text(GTK_TEXT_BUFFER(doc->buffer), contents, (int)length);
         g_signal_handler_unblock(doc->buffer, doc->changed_handler_id);
         lmme_document_set_save_state(doc, LMME_SAVE_STATE_SAVED);
+        if (doc->app->preview_enabled) {
+            (void)apply_document_preview_state(doc, TRUE);
+        }
     }
 }
 
@@ -198,19 +207,12 @@ document_new(LmmeApp *app, const char *path, const char *contents, const char *r
     doc->path = g_canonicalize_filename(path, NULL);
     doc->relative_path = app->workspace != NULL ? lmme_path_relative_to(app->workspace->path, doc->path) : g_strdup(relative_title);
     doc->source_view = lmme_editor_create_view(&doc->buffer, &app->config);
-    doc->source_scroller = gtk_scrolled_window_new();
-    doc->preview_view = lmme_preview_create_view();
-    doc->preview_scroller = gtk_scrolled_window_new();
-    doc->scroller = gtk_stack_new();
+    doc->scroller = gtk_scrolled_window_new();
     doc->save_state = LMME_SAVE_STATE_SAVED;
 
     gtk_widget_set_hexpand(doc->scroller, TRUE);
     gtk_widget_set_vexpand(doc->scroller, TRUE);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(doc->source_scroller), doc->source_view);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(doc->preview_scroller), doc->preview_view);
-    gtk_stack_add_named(GTK_STACK(doc->scroller), doc->source_scroller, "editor");
-    gtk_stack_add_named(GTK_STACK(doc->scroller), doc->preview_scroller, "preview");
-    lmme_document_set_preview_visible(doc, app->preview_enabled);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(doc->scroller), doc->source_view);
     lmme_image_insert_setup_for_document(doc);
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(doc->buffer), contents != NULL ? contents : "", -1);
     gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc->buffer), FALSE);
@@ -218,30 +220,135 @@ document_new(LmmeApp *app, const char *path, const char *contents, const char *r
     doc->changed_handler_id = g_signal_connect(doc->buffer, "changed", G_CALLBACK(on_buffer_changed), doc);
     g_signal_connect(doc->buffer, "notify::cursor-position", G_CALLBACK(on_cursor_moved), doc);
     attach_monitor(doc);
+    if (app->preview_enabled) {
+        (void)apply_document_preview_state(doc, TRUE);
+    }
 
     return doc;
 }
 
-void
-lmme_document_set_preview_visible(LmmeDocument *doc, gboolean visible)
+static LmmePreviewApplyResult
+apply_document_preview_state(LmmeDocument *doc, gboolean visible)
 {
-    if (doc == NULL || doc->scroller == NULL) {
-        return;
+    GtkTextBuffer *buffer = doc != NULL ? GTK_TEXT_BUFFER(doc->buffer) : NULL;
+    GtkAdjustment *hadjustment = NULL;
+    GtkAdjustment *vadjustment = NULL;
+    GtkTextIter iter;
+    GtkTextIter selection_start;
+    GtkTextIter selection_end;
+    gboolean had_selection = FALSE;
+    int insert_offset = 0;
+    int selection_start_offset = 0;
+    int selection_end_offset = 0;
+    double hvalue = 0.0;
+    double vvalue = 0.0;
+    gboolean buffer_modified = FALSE;
+    gboolean doc_modified = FALSE;
+    LmmeSaveState save_state = LMME_SAVE_STATE_SAVED;
+    LmmePreviewApplyResult result = LMME_PREVIEW_APPLY_OK;
+
+    if (doc == NULL || buffer == NULL || doc->source_view == NULL) {
+        return LMME_PREVIEW_APPLY_FAILED;
     }
 
-    gtk_stack_set_visible_child_name(GTK_STACK(doc->scroller), visible ? "preview" : "editor");
+    buffer_modified = gtk_text_buffer_get_modified(buffer);
+    doc_modified = doc->modified;
+    save_state = doc->save_state;
+
+    if (gtk_text_buffer_get_selection_bounds(buffer, &selection_start, &selection_end)) {
+        had_selection = TRUE;
+        selection_start_offset = gtk_text_iter_get_offset(&selection_start);
+        selection_end_offset = gtk_text_iter_get_offset(&selection_end);
+    } else {
+        gtk_text_buffer_get_iter_at_mark(buffer, &iter, gtk_text_buffer_get_insert(buffer));
+        insert_offset = gtk_text_iter_get_offset(&iter);
+    }
+
+    if (doc->scroller != NULL) {
+        hadjustment = gtk_scrolled_window_get_hadjustment(GTK_SCROLLED_WINDOW(doc->scroller));
+        vadjustment = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(doc->scroller));
+        hvalue = gtk_adjustment_get_value(hadjustment);
+        vvalue = gtk_adjustment_get_value(vadjustment);
+    }
+
+    if (doc->changed_handler_id != 0) {
+        g_signal_handler_block(buffer, doc->changed_handler_id);
+    }
+
+    if (visible) {
+        result = lmme_preview_apply_editable_preview(buffer, doc->app->config.preview_hide_frontmatter, TRUE);
+        if (result == LMME_PREVIEW_APPLY_FAILED) {
+            lmme_preview_clear_editable_preview(buffer);
+            gtk_widget_remove_css_class(doc->source_view, "preview-edit-mode");
+        } else {
+            gtk_widget_add_css_class(doc->source_view, "preview-edit-mode");
+        }
+    } else {
+        lmme_preview_clear_editable_preview(buffer);
+        gtk_widget_remove_css_class(doc->source_view, "preview-edit-mode");
+    }
+
+    if (doc->changed_handler_id != 0) {
+        g_signal_handler_unblock(buffer, doc->changed_handler_id);
+    }
+
+    if (had_selection) {
+        GtkTextIter current_start;
+        GtkTextIter current_end;
+        gboolean has_current_selection = gtk_text_buffer_get_selection_bounds(buffer, &current_start, &current_end);
+        if (!has_current_selection ||
+            gtk_text_iter_get_offset(&current_start) != selection_start_offset ||
+            gtk_text_iter_get_offset(&current_end) != selection_end_offset) {
+            gtk_text_buffer_get_iter_at_offset(buffer, &selection_start, selection_start_offset);
+            gtk_text_buffer_get_iter_at_offset(buffer, &selection_end, selection_end_offset);
+            gtk_text_buffer_select_range(buffer, &selection_start, &selection_end);
+        }
+    } else {
+        gtk_text_buffer_get_iter_at_mark(buffer, &iter, gtk_text_buffer_get_insert(buffer));
+        if (gtk_text_iter_get_offset(&iter) != insert_offset) {
+            gtk_text_buffer_get_iter_at_offset(buffer, &iter, insert_offset);
+            gtk_text_buffer_place_cursor(buffer, &iter);
+        }
+    }
+
+    if (hadjustment != NULL && vadjustment != NULL) {
+        gtk_adjustment_set_value(hadjustment, hvalue);
+        gtk_adjustment_set_value(vadjustment, vvalue);
+    }
+
+    gtk_text_buffer_set_modified(buffer, buffer_modified);
+    doc->modified = doc_modified;
+    doc->save_state = save_state;
+    update_tab_title(doc);
+
+    return result;
 }
 
-void
+LmmePreviewApplyResult
+lmme_document_set_preview_visible(LmmeDocument *doc, gboolean visible)
+{
+    return apply_document_preview_state(doc, visible);
+}
+
+LmmePreviewApplyResult
 lmme_tabs_set_preview_visible(LmmeApp *app, gboolean visible)
 {
+    LmmeDocument *active = app != NULL ? lmme_tabs_get_active(app) : NULL;
+    LmmePreviewApplyResult active_result = LMME_PREVIEW_APPLY_OK;
+
     if (app == NULL || app->documents == NULL) {
-        return;
+        return LMME_PREVIEW_APPLY_FAILED;
     }
 
     for (guint i = 0; i < app->documents->len; i++) {
-        lmme_document_set_preview_visible(g_ptr_array_index(app->documents, i), visible);
+        LmmeDocument *doc = g_ptr_array_index(app->documents, i);
+        LmmePreviewApplyResult result = apply_document_preview_state(doc, visible);
+        if (doc == active) {
+            active_result = result;
+        }
     }
+
+    return active_result;
 }
 
 LmmeDocument *
@@ -529,5 +636,9 @@ on_cursor_moved(GObject *object, GParamSpec *pspec, gpointer user_data)
     LmmeDocument *doc = user_data;
     (void)object;
     (void)pspec;
-    lmme_window_update_status(doc->app);
+    if (doc->app->preview_enabled) {
+        lmme_window_refresh_preview_now(doc->app);
+    } else {
+        lmme_window_update_status(doc->app);
+    }
 }
