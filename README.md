@@ -74,6 +74,17 @@ UI language is English only.
 Primary target is MX Linux / Debian-based systems.
 Editable Preview is a same-buffer styling layer for Markdown source, not WYSIWYG or full GitHub Markdown rendering.
 
+## Project structure
+
+`src/app` contains application lifecycle and global state.
+`src/ui` contains GTK layout, menus, toolbars, status bar and context menus.
+`src/command` contains command metadata, GTK action callbacks and shortcuts.
+`src/document` contains document state, tabs, autosave, recovery and file monitoring.
+`src/workspace` contains workspace scanning and file operations.
+`src/editor` contains GtkSourceView setup, editing operations, search and preview logic.
+`src/features` contains self-contained optional editor features such as image insertion.
+`src/infra` contains config, dialogs, atomic writes and utility helpers.
+
 ## License
 
 MIT.

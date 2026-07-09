@@ -1,7 +1,7 @@
 #include <glib.h>
 #include <string.h>
 
-#include "preview_style.h"
+#include "editor/preview_style.h"
 
 static guint
 char_offset_of(const char *text, const char *needle)

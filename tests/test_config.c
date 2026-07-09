@@ -1,7 +1,7 @@
 #include <glib.h>
 #include <glib/gstdio.h>
 
-#include "config.h"
+#include "infra/config.h"
 
 static void
 test_defaults(void)

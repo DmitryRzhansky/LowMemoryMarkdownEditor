@@ -1,7 +1,7 @@
 #include <glib.h>
 #include <glib/gstdio.h>
 
-#include "util.h"
+#include "infra/util.h"
 
 static void
 test_extensions(void)

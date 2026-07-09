@@ -1,7 +1,7 @@
 #include <glib.h>
 #include <string.h>
 
-#include "markdown.h"
+#include "editor/markdown.h"
 
 static void
 test_basic_preview(void)
