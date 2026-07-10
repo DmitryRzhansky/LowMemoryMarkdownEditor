@@ -13,90 +13,63 @@ static GtkWidget *tree_context_popover;
 static void
 tree_context_clear(LmmeApp *app)
 {
-    g_clear_pointer(&app->tree_context_path, g_free);
-    app->tree_context_kind = LMME_FILE_KIND_OTHER;
-    app->tree_context_is_dir = FALSE;
-    app->tree_context_is_markdown = FALSE;
-    app->tree_context_is_image = FALSE;
-    app->tree_context_is_empty_area = FALSE;
+    g_clear_pointer(&app->tree_context.path, g_free);
+    app->tree_context.kind = LMME_FILE_KIND_OTHER;
+    app->tree_context.empty_area = FALSE;
 }
 
 static void
 tree_context_set(LmmeApp *app, const char *path, LmmeFileKind kind, gboolean empty_area)
 {
     tree_context_clear(app);
-    app->tree_context_is_empty_area = empty_area;
+    app->tree_context.empty_area = empty_area;
     if (empty_area || path == NULL) {
         return;
     }
 
-    app->tree_context_path = g_strdup(path);
-    app->tree_context_kind = kind;
-    app->tree_context_is_dir = kind == LMME_FILE_KIND_DIRECTORY;
-    app->tree_context_is_markdown = kind == LMME_FILE_KIND_MARKDOWN;
-    app->tree_context_is_image = kind == LMME_FILE_KIND_IMAGE;
+    app->tree_context.path = g_strdup(path);
+    app->tree_context.kind = kind;
 }
 
 static void
 sync_selected_path_from_tree(LmmeApp *app, const char *path, LmmeFileKind kind)
 {
-    g_clear_pointer(&app->selected_path, g_free);
-    app->selected_is_dir = FALSE;
-    app->selected_is_markdown = FALSE;
-    app->selected_is_image = FALSE;
+    g_clear_pointer(&app->selection.path, g_free);
+    app->selection.kind = LMME_FILE_KIND_OTHER;
+    app->selection.empty_area = FALSE;
     if (path == NULL) {
         return;
     }
 
-    app->selected_path = g_strdup(path);
-    app->selected_is_dir = kind == LMME_FILE_KIND_DIRECTORY;
-    app->selected_is_markdown = kind == LMME_FILE_KIND_MARKDOWN;
-    app->selected_is_image = kind == LMME_FILE_KIND_IMAGE;
+    app->selection.path = g_strdup(path);
+    app->selection.kind = kind;
 }
 
 static gboolean
 tree_select_path_at_position(LmmeApp *app, double x, double y)
 {
-    GtkTreeView *tree_view = GTK_TREE_VIEW(app->tree_view);
-    GtkTreeSelection *selection = gtk_tree_view_get_selection(tree_view);
-    GtkTreePath *path = NULL;
-    GtkTreeViewColumn *column = NULL;
-    int cell_x = 0;
-    int cell_y = 0;
-    GtkTreeModel *model = NULL;
-    GtkTreeIter iter;
-    int kind = 0;
     g_autofree char *file_path = NULL;
+    LmmeFileKind kind = LMME_FILE_KIND_OTHER;
 
-    if (!gtk_tree_view_get_path_at_pos(tree_view, (int)x, (int)y, &path, &column, &cell_x, &cell_y)) {
-        gtk_tree_selection_unselect_all(selection);
+    if (!lmme_file_tree_select_at(app->tree_view, x, y, &file_path, &kind)) {
         sync_selected_path_from_tree(app, NULL, LMME_FILE_KIND_OTHER);
         tree_context_set(app, NULL, LMME_FILE_KIND_OTHER, TRUE);
         return FALSE;
     }
 
-    gtk_tree_selection_select_path(selection, path);
-    model = gtk_tree_view_get_model(tree_view);
-    if (!gtk_tree_model_get_iter(model, &iter, path)) {
-        gtk_tree_path_free(path);
-        return FALSE;
-    }
-
-    gtk_tree_model_get(model, &iter, LMME_TREE_COL_PATH, &file_path, LMME_TREE_COL_KIND, &kind, -1);
-    gtk_tree_path_free(path);
-    sync_selected_path_from_tree(app, file_path, (LmmeFileKind)kind);
-    tree_context_set(app, file_path, (LmmeFileKind)kind, FALSE);
+    sync_selected_path_from_tree(app, file_path, kind);
+    tree_context_set(app, file_path, kind, FALSE);
     return TRUE;
 }
 
 char *
 lmme_tree_context_menu_dup_relative_path(const LmmeApp *app)
 {
-    if (app == NULL || app->workspace == NULL || app->tree_context_path == NULL) {
+    if (app == NULL || app->workspace == NULL || app->tree_context.path == NULL) {
         return NULL;
     }
 
-    return lmme_path_relative_to(app->workspace->path, app->tree_context_path);
+    return lmme_path_relative_to(app->workspace->path, app->tree_context.path);
 }
 
 static GMenuModel *
@@ -104,19 +77,19 @@ create_tree_context_menu_model(LmmeApp *app)
 {
     GMenu *menu = g_menu_new();
     gboolean has_workspace = app != NULL && app->workspace != NULL;
-    gboolean is_empty = app != NULL && app->tree_context_is_empty_area;
-    gboolean is_dir = app != NULL && app->tree_context_is_dir;
-    gboolean is_markdown = app != NULL && app->tree_context_is_markdown;
-    gboolean is_image = app != NULL && app->tree_context_is_image;
+    gboolean is_empty = app != NULL && app->tree_context.empty_area;
+    gboolean is_dir = app != NULL && lmme_path_context_is_directory(&app->tree_context);
+    gboolean is_markdown = app != NULL && lmme_path_context_is_markdown(&app->tree_context);
+    gboolean is_image = app != NULL && lmme_path_context_is_image(&app->tree_context);
     gboolean tab_open = FALSE;
     gboolean is_workspace_root = FALSE;
 
     if (app == NULL) {
         return G_MENU_MODEL(menu);
     }
-    if (has_workspace && app->tree_context_path != NULL) {
-        is_workspace_root = g_strcmp0(app->tree_context_path, app->workspace->path) == 0;
-        tab_open = lmme_tabs_find_by_path(app, app->tree_context_path) != NULL;
+    if (has_workspace && app->tree_context.path != NULL) {
+        is_workspace_root = g_strcmp0(app->tree_context.path, app->workspace->path) == 0;
+        tab_open = lmme_tabs_find_by_path(app, app->tree_context.path) != NULL;
     }
     if (is_empty) {
         if (has_workspace) {
@@ -150,7 +123,7 @@ create_tree_context_menu_model(LmmeApp *app)
         g_menu_append_section(menu, NULL, G_MENU_MODEL(section));
         g_object_unref(section);
     }
-    if (app->tree_context_path != NULL) {
+    if (app->tree_context.path != NULL) {
         GMenu *copy_section = g_menu_new();
         GMenu *reveal_section = g_menu_new();
         g_menu_append(copy_section, "Copy Relative Path", "app.tree-copy-relative-path");

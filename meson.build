@@ -18,19 +18,9 @@ endif
 
 gtk_dep = dependency('gtk4')
 gtksource_dep = dependency('gtksourceview-5')
-cmark_dep = dependency(
-  'libcmark',
-  required: false,
-)
-
-if not cmark_dep.found()
-  error('libcmark was not found. On Debian/MX Linux install it with: sudo apt install libcmark-dev')
-endif
-
 deps = [
   gtk_dep,
   gtksource_dep,
-  cmark_dep,
 ]
 
 common_args = [
@@ -46,6 +36,19 @@ common_args = [
 if cc.has_argument('-Wconversion')
   common_args += ['-Wconversion']
 endif
+
+foreach warning_arg : [
+  '-Wmissing-declarations',
+  '-Wformat=2',
+  '-Wundef',
+  '-Wwrite-strings',
+  '-Wswitch-enum',
+  '-Wnull-dereference',
+]
+  if cc.has_argument(warning_arg)
+    common_args += [warning_arg]
+  endif
+endforeach
 
 gnome = import('gnome')
 resources = gnome.compile_resources(
@@ -69,13 +72,19 @@ core_sources = files(
 
   'src/command/command_registry.c',
   'src/command/command_actions.c',
-  'src/command/command_shortcuts.c',
+  'src/command/command_handlers.c',
+  'src/command/command_file.c',
+  'src/command/command_workspace.c',
+  'src/command/command_document.c',
+  'src/command/command_editor.c',
+  'src/command/command_view.c',
 
   'src/document/document.c',
   'src/document/tabs.c',
   'src/document/document_autosave.c',
   'src/document/recovery.c',
   'src/document/file_monitor.c',
+  'src/document/file_fingerprint.c',
 
   'src/infra/config.c',
   'src/workspace/workspace.c',
@@ -85,7 +94,6 @@ core_sources = files(
   'src/editor/preview.c',
   'src/editor/preview_style.c',
   'src/features/image_insert.c',
-  'src/editor/markdown.c',
   'src/infra/dialogs.c',
   'src/infra/safe_write.c',
   'src/infra/util.c',
@@ -105,7 +113,7 @@ executable(
   resources,
   link_with: lmme_lib,
   dependencies: deps,
-  c_args: common_args,
+  c_args: common_args + ['-Wno-overlength-strings'],
   include_directories: include_directories('src'),
   install: true,
 )

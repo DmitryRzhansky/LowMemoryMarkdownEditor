@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include "features/image_insert.h"
 
 #include "app/app.h"
@@ -8,7 +10,27 @@
 #include "ui/window.h"
 #include "workspace/workspace.h"
 
+#include <errno.h>
 #include <string.h>
+#include <sys/stat.h>
+
+#include <glib/gstdio.h>
+
+typedef struct {
+    LmmeApp *app;
+    guint64 document_id;
+    GCancellable *cancellable;
+} LmmeImageInsertRequest;
+
+static void
+image_insert_request_free(LmmeImageInsertRequest *request)
+{
+    if (request == NULL) {
+        return;
+    }
+    g_clear_object(&request->cancellable);
+    g_free(request);
+}
 
 static const char *
 image_extension_for_path(const char *path)
@@ -21,6 +43,7 @@ static gboolean
 ensure_img_dir(LmmeApp *app, char **out_dir, GError **error)
 {
     g_autofree char *dir = NULL;
+    struct stat info;
 
     if (app->workspace == NULL) {
         g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Open a workspace first.");
@@ -28,8 +51,22 @@ ensure_img_dir(LmmeApp *app, char **out_dir, GError **error)
     }
 
     dir = g_build_filename(app->workspace->path, "img", NULL);
-    if (g_mkdir_with_parents(dir, 0700) != 0) {
-        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_FAILED, "Could not create img folder.");
+    if (!lmme_workspace_validate_target_parent(app->workspace, dir, error)) {
+        return FALSE;
+    }
+    if (g_lstat(dir, &info) == 0) {
+        if (!S_ISDIR(info.st_mode) || S_ISLNK(info.st_mode)) {
+            g_set_error_literal(error,
+                                G_FILE_ERROR,
+                                G_FILE_ERROR_PERM,
+                                "The workspace img path is not a safe directory.");
+            return FALSE;
+        }
+    } else if (errno != ENOENT) {
+        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not inspect img folder.");
+        return FALSE;
+    } else if (g_mkdir(dir, 0700) != 0) {
+        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not create img folder.");
         return FALSE;
     }
 
@@ -37,26 +74,41 @@ ensure_img_dir(LmmeApp *app, char **out_dir, GError **error)
     return TRUE;
 }
 
-static gboolean
-insert_link_for_dest(LmmeApp *app, const char *dest_path)
+char *
+lmme_image_markdown_link(const char *workspace_path, const char *destination_path)
 {
-    LmmeDocument *doc = lmme_tabs_get_active(app);
+    g_autofree char *relative = NULL;
 
-    if (doc == NULL) {
+    if (workspace_path == NULL || destination_path == NULL) {
+        return NULL;
+    }
+    relative = lmme_path_relative_to(workspace_path, destination_path);
+    return g_strdup_printf("![](%s)", relative);
+}
+
+static gboolean
+insert_link_for_dest(LmmeDocument *doc, const char *dest_path)
+{
+    g_autofree char *link = NULL;
+
+    if (doc == NULL || doc->app == NULL || doc->app->workspace == NULL ||
+        lmme_tabs_find_by_id(doc->app, doc->id) != doc) {
         return FALSE;
     }
-
-    g_autofree char *relative = lmme_path_relative_to(app->workspace->path, dest_path);
-    g_autofree char *link = g_strdup_printf("![](%s)", relative);
+    link = lmme_image_markdown_link(doc->app->workspace->path, dest_path);
+    if (link == NULL) {
+        return FALSE;
+    }
     lmme_editor_insert_text_at_cursor(GTK_TEXT_BUFFER(doc->buffer), link);
-    lmme_window_refresh_tree(app);
+    lmme_window_refresh_tree_directory(doc->app, doc->app->workspace->path);
     return TRUE;
 }
 
 gboolean
-lmme_image_insert_from_file(LmmeApp *app, const char *source_path)
+lmme_image_insert_for_document(LmmeDocument *doc, const char *source_path)
 {
-    LmmeDocument *doc = lmme_tabs_get_active(app);
+    LmmeApp *app = doc != NULL ? doc->app : NULL;
+    GtkWindow *parent = app != NULL && app->window != NULL ? GTK_WINDOW(app->window) : NULL;
     g_autofree char *img_dir = NULL;
     g_autofree char *filename = NULL;
     g_autofree char *dest_path = NULL;
@@ -65,11 +117,11 @@ lmme_image_insert_from_file(LmmeApp *app, const char *source_path)
     g_autoptr(GFile) dest = NULL;
     g_autoptr(GError) error = NULL;
 
-    if (doc == NULL ||
+    if (doc == NULL || app == NULL ||
         app->workspace == NULL ||
         !lmme_path_has_markdown_extension(doc->path) ||
         !lmme_path_is_inside(app->workspace->path, doc->path)) {
-        lmme_dialog_error(GTK_WINDOW(app->window), "Could not insert image.", "Open a Markdown file in a workspace first.");
+        lmme_dialog_error(parent, "Could not insert image.", "Open a Markdown file in a workspace first.");
         return FALSE;
     }
     if (!lmme_path_has_image_extension(source_path)) {
@@ -92,7 +144,17 @@ lmme_image_insert_from_file(LmmeApp *app, const char *source_path)
         return FALSE;
     }
 
-    return insert_link_for_dest(app, dest_path);
+    if (!insert_link_for_dest(doc, dest_path)) {
+        g_file_delete(dest, NULL, NULL);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+gboolean
+lmme_image_insert_from_file(LmmeApp *app, const char *source_path)
+{
+    return lmme_image_insert_for_document(lmme_tabs_get_active(app), source_path);
 }
 
 void
@@ -135,24 +197,37 @@ save_texture_to_img(LmmeDocument *doc, GdkTexture *texture)
         return FALSE;
     }
 
-    return insert_link_for_dest(app, dest_path);
+    if (!insert_link_for_dest(doc, dest_path)) {
+        g_unlink(dest_path);
+        return FALSE;
+    }
+    return TRUE;
 }
 
 static void
 on_clipboard_texture_ready(GObject *source_object, GAsyncResult *result, gpointer user_data)
 {
-    LmmeDocument *doc = user_data;
+    LmmeImageInsertRequest *request = user_data;
     GdkClipboard *clipboard = GDK_CLIPBOARD(source_object);
     g_autoptr(GError) error = NULL;
     GdkTexture *texture = gdk_clipboard_read_texture_finish(clipboard, result, &error);
+    LmmeDocument *doc = lmme_tabs_find_by_id(request->app, request->document_id);
 
     if (texture == NULL) {
-        lmme_dialog_error(GTK_WINDOW(doc->app->window), "Clipboard does not contain an image.", NULL);
+        if (error == NULL || !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+            lmme_dialog_error(GTK_WINDOW(request->app->window), "Clipboard does not contain an image.", NULL);
+        }
+        image_insert_request_free(request);
         return;
     }
 
-    save_texture_to_img(doc, texture);
+    if (doc != NULL && doc->clipboard_cancellable == request->cancellable &&
+        !g_cancellable_is_cancelled(request->cancellable)) {
+        g_clear_object(&doc->clipboard_cancellable);
+        save_texture_to_img(doc, texture);
+    }
     g_object_unref(texture);
+    image_insert_request_free(request);
 }
 
 static gboolean
@@ -172,12 +247,25 @@ on_editor_key_pressed(GtkEventControllerKey *controller,
 
     GdkClipboard *clipboard = gtk_widget_get_clipboard(doc->source_view);
     GdkContentFormats *formats = gdk_clipboard_get_formats(clipboard);
+    LmmeImageInsertRequest *request = NULL;
 
     if (!gdk_content_formats_contain_gtype(formats, GDK_TYPE_TEXTURE)) {
         return FALSE;
     }
 
-    gdk_clipboard_read_texture_async(clipboard, NULL, on_clipboard_texture_ready, doc);
+    if (doc->clipboard_cancellable != NULL) {
+        g_cancellable_cancel(doc->clipboard_cancellable);
+        g_clear_object(&doc->clipboard_cancellable);
+    }
+    doc->clipboard_cancellable = g_cancellable_new();
+    request = g_new0(LmmeImageInsertRequest, 1);
+    request->app = doc->app;
+    request->document_id = doc->id;
+    request->cancellable = g_object_ref(doc->clipboard_cancellable);
+    gdk_clipboard_read_texture_async(clipboard,
+                                     doc->clipboard_cancellable,
+                                     on_clipboard_texture_ready,
+                                     request);
     return TRUE;
 }
 
@@ -203,7 +291,7 @@ on_drop(GtkDropTarget *target,
         return FALSE;
     }
 
-    return lmme_image_insert_from_file(doc->app, path);
+    return lmme_image_insert_for_document(doc, path);
 }
 
 void

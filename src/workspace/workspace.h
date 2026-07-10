@@ -10,6 +10,8 @@ typedef struct _LmmeFileNode {
     char *name;
     LmmeFileKind kind;
     GPtrArray *children;
+    gboolean loaded;
+    gboolean dirty;
 } LmmeFileNode;
 
 typedef struct _LmmeWorkspace {
@@ -23,6 +25,20 @@ gboolean lmme_workspace_rescan(LmmeWorkspace *workspace,
                                gboolean show_hidden_files,
                                gboolean show_images,
                                GError **error);
+gboolean lmme_workspace_load_directory(LmmeWorkspace *workspace,
+                                       LmmeFileNode *node,
+                                       gboolean show_hidden_files,
+                                       gboolean show_images,
+                                       GError **error);
+gboolean lmme_workspace_refresh_directory(LmmeWorkspace *workspace,
+                                          const char *directory_path,
+                                          gboolean show_hidden_files,
+                                          gboolean show_images,
+                                          GError **error);
+LmmeFileNode *lmme_workspace_find_node(LmmeWorkspace *workspace, const char *path);
+gboolean lmme_workspace_validate_target_parent(const LmmeWorkspace *workspace,
+                                                const char *path,
+                                                GError **error);
 
 void lmme_file_node_free(LmmeFileNode *node);
 

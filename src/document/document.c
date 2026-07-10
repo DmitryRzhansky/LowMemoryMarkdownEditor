@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include "document/document.h"
 
 #include "app/app.h"
@@ -12,12 +14,76 @@
 #include "workspace/workspace.h"
 
 #include <string.h>
+#include <stdlib.h>
+
+static gboolean
+save_target_is_inside_workspace(const LmmeDocument *doc,
+                                const char *path,
+                                GError **error)
+{
+    g_autofree char *canonical_path = NULL;
+    g_autofree char *real_workspace = NULL;
+    g_autofree char *real_target = NULL;
+
+    if (doc == NULL || doc->app->workspace == NULL) {
+        return TRUE;
+    }
+    canonical_path = g_canonicalize_filename(path, NULL);
+    if (!lmme_path_is_inside(doc->app->workspace->path, canonical_path)) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_PERM, "Save destination is outside the workspace.");
+        return FALSE;
+    }
+
+    real_workspace = realpath(doc->app->workspace->path, NULL);
+    real_target = realpath(path, NULL);
+    if (real_workspace != NULL && real_target != NULL &&
+        !lmme_path_is_inside(real_workspace, real_target)) {
+        g_set_error_literal(error,
+                            G_FILE_ERROR,
+                            G_FILE_ERROR_PERM,
+                            "Symbolic link target is outside the workspace.");
+        return FALSE;
+    }
+    return TRUE;
+}
 
 static void on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data);
 static void on_cursor_moved(GObject *object, GParamSpec *pspec, gpointer user_data);
 
+static gboolean
+stats_timeout_cb(gpointer user_data)
+{
+    LmmeDocument *doc = user_data;
+    g_autofree char *text = NULL;
+
+    doc->stats_timeout_id = 0;
+    if (!doc->word_count_dirty || !doc->app->config.show_statusbar ||
+        doc->app->status_label == NULL || !gtk_widget_get_visible(doc->app->status_label)) {
+        return G_SOURCE_REMOVE;
+    }
+    text = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
+    doc->word_count = lmme_word_count(text);
+    doc->word_count_dirty = FALSE;
+    lmme_window_update_status(doc->app);
+    return G_SOURCE_REMOVE;
+}
+
 static void
-update_tab_title(LmmeDocument *doc)
+schedule_stats_update(LmmeDocument *doc)
+{
+    doc->word_count_dirty = TRUE;
+    if (doc->stats_timeout_id != 0) {
+        g_source_remove(doc->stats_timeout_id);
+        doc->stats_timeout_id = 0;
+    }
+    if (doc->app->config.show_statusbar && doc->app->status_label != NULL &&
+        gtk_widget_get_visible(doc->app->status_label)) {
+        doc->stats_timeout_id = g_timeout_add(250, stats_timeout_cb, doc);
+    }
+}
+
+void
+lmme_document_refresh_title(LmmeDocument *doc)
 {
     if (doc == NULL || doc->title_label == NULL) {
         return;
@@ -33,6 +99,12 @@ lmme_document_save_state_label(const LmmeDocument *doc)
 {
     if (doc == NULL) {
         return "Saved";
+    }
+    if (doc->disk_state == LMME_DISK_STATE_EXTERNAL_CHANGED) {
+        return "Conflict";
+    }
+    if (doc->disk_state == LMME_DISK_STATE_EXTERNAL_DELETED) {
+        return "Deleted";
     }
 
     switch (doc->save_state) {
@@ -57,7 +129,7 @@ lmme_document_set_save_state(LmmeDocument *doc, LmmeSaveState state)
 
     doc->save_state = state;
     doc->modified = state == LMME_SAVE_STATE_MODIFIED || state == LMME_SAVE_STATE_ERROR;
-    update_tab_title(doc);
+    lmme_document_refresh_title(doc);
     lmme_window_update_status(doc->app);
 }
 
@@ -67,12 +139,17 @@ lmme_document_new(LmmeApp *app, const char *path, const char *contents, const ch
     LmmeDocument *doc = g_new0(LmmeDocument, 1);
 
     doc->app = app;
+    doc->id = app->next_document_id++;
     doc->path = g_canonicalize_filename(path, NULL);
     doc->relative_path = app->workspace != NULL ? lmme_path_relative_to(app->workspace->path, doc->path) : g_strdup(relative_title);
     doc->source_view = lmme_editor_create_view(&doc->buffer, &app->config);
     lmme_editor_setup_zoom_keys(doc->source_view, G_ACTION_GROUP(app->gtk_app));
     doc->scroller = gtk_scrolled_window_new();
     doc->save_state = LMME_SAVE_STATE_SAVED;
+    doc->disk_state = LMME_DISK_STATE_NORMAL;
+    doc->preview_dirty = TRUE;
+    (void)lmme_file_fingerprint_read(doc->path, &doc->last_known_fingerprint, NULL);
+    doc->base_fingerprint = doc->last_known_fingerprint;
 
     gtk_widget_set_hexpand(doc->scroller, TRUE);
     gtk_widget_set_vexpand(doc->scroller, TRUE);
@@ -80,14 +157,11 @@ lmme_document_new(LmmeApp *app, const char *path, const char *contents, const ch
     lmme_image_insert_setup_for_document(doc);
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(doc->buffer), contents != NULL ? contents : "", -1);
     gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc->buffer), FALSE);
+    doc->word_count = lmme_word_count(contents != NULL ? contents : "");
 
     doc->changed_handler_id = g_signal_connect(doc->buffer, "changed", G_CALLBACK(on_buffer_changed), doc);
     g_signal_connect(doc->buffer, "notify::cursor-position", G_CALLBACK(on_cursor_moved), doc);
     lmme_document_file_monitor_attach(doc);
-    if (app->preview_enabled) {
-        (void)lmme_document_set_preview_visible(doc, TRUE);
-    }
-
     return doc;
 }
 
@@ -146,10 +220,17 @@ lmme_document_set_preview_visible(LmmeDocument *doc, gboolean visible)
             gtk_widget_remove_css_class(doc->source_view, "preview-edit-mode");
         } else {
             gtk_widget_add_css_class(doc->source_view, "preview-edit-mode");
+            gtk_text_buffer_get_iter_at_mark(buffer, &iter, gtk_text_buffer_get_insert(buffer));
+            doc->preview_active_line = (guint)gtk_text_iter_get_line(&iter);
+            doc->preview_active_line_valid = TRUE;
+            doc->preview_dirty = FALSE;
+            doc->preview_full_parse_count++;
         }
     } else {
         lmme_preview_clear_editable_preview(buffer);
         gtk_widget_remove_css_class(doc->source_view, "preview-edit-mode");
+        doc->preview_active_line_valid = FALSE;
+        doc->preview_dirty = TRUE;
     }
 
     if (doc->changed_handler_id != 0) {
@@ -183,9 +264,69 @@ lmme_document_set_preview_visible(LmmeDocument *doc, gboolean visible)
     gtk_text_buffer_set_modified(buffer, buffer_modified);
     doc->modified = doc_modified;
     doc->save_state = save_state;
-    update_tab_title(doc);
+    lmme_document_refresh_title(doc);
 
     return result;
+}
+
+void
+lmme_document_update_preview_active_line(LmmeDocument *doc)
+{
+    GtkTextIter cursor;
+    guint new_line = 0;
+
+    if (doc == NULL || !doc->app->preview_enabled || doc->preview_dirty) {
+        return;
+    }
+    gtk_text_buffer_get_iter_at_mark(GTK_TEXT_BUFFER(doc->buffer),
+                                     &cursor,
+                                     gtk_text_buffer_get_insert(GTK_TEXT_BUFFER(doc->buffer)));
+    new_line = (guint)gtk_text_iter_get_line(&cursor);
+    if (doc->preview_active_line_valid && doc->preview_active_line == new_line) {
+        return;
+    }
+    lmme_preview_update_active_line(GTK_TEXT_BUFFER(doc->buffer),
+                                    doc->preview_active_line,
+                                    doc->preview_active_line_valid,
+                                    new_line);
+    doc->preview_active_line = new_line;
+    doc->preview_active_line_valid = TRUE;
+}
+
+gboolean
+lmme_document_flush_recovery(LmmeDocument *doc, GError **error)
+{
+    g_autofree char *text = NULL;
+    const char *workspace_path = NULL;
+
+    if (doc == NULL || (!doc->modified && !doc->restored_from_recovery &&
+                        doc->disk_state == LMME_DISK_STATE_NORMAL)) {
+        return TRUE;
+    }
+    text = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
+    workspace_path = doc->app->workspace != NULL ? doc->app->workspace->path : NULL;
+    return lmme_recovery_write(doc->app->recovery_store,
+                               doc->path,
+                               workspace_path,
+                               &doc->base_fingerprint,
+                               text,
+                               strlen(text),
+                               error);
+}
+
+void
+lmme_document_mark_recovered(LmmeDocument *doc,
+                             const char *recovery_source_path,
+                             gboolean original_changed)
+{
+    if (doc == NULL) {
+        return;
+    }
+    g_free(doc->recovery_source_path);
+    doc->recovery_source_path = g_strdup(recovery_source_path);
+    doc->restored_from_recovery = TRUE;
+    doc->disk_state = original_changed ? LMME_DISK_STATE_EXTERNAL_CHANGED : LMME_DISK_STATE_NORMAL;
+    lmme_document_set_save_state(doc, LMME_SAVE_STATE_MODIFIED);
 }
 
 gboolean
@@ -196,18 +337,100 @@ lmme_document_save(LmmeDocument *doc, GError **error)
     if (doc == NULL) {
         return TRUE;
     }
+    if (doc->disk_state != LMME_DISK_STATE_NORMAL) {
+        g_set_error_literal(error,
+                            G_FILE_ERROR,
+                            G_FILE_ERROR_AGAIN,
+                            "Resolve the external file conflict before saving.");
+        return FALSE;
+    }
+    if (!save_target_is_inside_workspace(doc, doc->path, error)) {
+        return FALSE;
+    }
 
     text = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
     if (!lmme_safe_write_file(doc->path, text, strlen(text), error)) {
         return FALSE;
     }
 
-    doc->last_internal_save_us = g_get_monotonic_time();
+    if (!lmme_file_fingerprint_read(doc->path, &doc->expected_internal_fingerprint, error)) {
+        return FALSE;
+    }
+    doc->last_known_fingerprint = doc->expected_internal_fingerprint;
+    doc->base_fingerprint = doc->expected_internal_fingerprint;
+    doc->has_expected_internal_fingerprint = TRUE;
     gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc->buffer), FALSE);
-    lmme_recovery_remove(doc->path, NULL);
+    lmme_recovery_remove(doc->app->recovery_store, doc->path, NULL);
     lmme_document_cancel_autosave(doc);
     lmme_document_cancel_recovery(doc);
+    g_clear_pointer(&doc->recovery_source_path, g_free);
+    doc->restored_from_recovery = FALSE;
+    doc->disk_state = LMME_DISK_STATE_NORMAL;
     lmme_document_set_save_state(doc, LMME_SAVE_STATE_SAVED);
+    return TRUE;
+}
+
+gboolean
+lmme_document_overwrite(LmmeDocument *doc, GError **error)
+{
+    LmmeDiskState previous_state = LMME_DISK_STATE_NORMAL;
+
+    if (doc == NULL) {
+        return TRUE;
+    }
+    previous_state = doc->disk_state;
+    doc->disk_state = LMME_DISK_STATE_NORMAL;
+    if (lmme_document_save(doc, error)) {
+        return TRUE;
+    }
+    doc->disk_state = previous_state;
+    return FALSE;
+}
+
+gboolean
+lmme_document_save_as(LmmeDocument *doc, const char *new_path, GError **error)
+{
+    g_autofree char *canonical_path = NULL;
+    g_autofree char *text = NULL;
+    g_autofree char *old_path = NULL;
+
+    if (doc == NULL || new_path == NULL || doc->app->workspace == NULL) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid Save As destination.");
+        return FALSE;
+    }
+    canonical_path = g_canonicalize_filename(new_path, NULL);
+    if (!save_target_is_inside_workspace(doc, canonical_path, error)) {
+        return FALSE;
+    }
+
+    text = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
+    if (!lmme_safe_write_file(canonical_path, text, strlen(text), error)) {
+        return FALSE;
+    }
+
+    old_path = g_strdup(doc->path);
+    lmme_document_file_monitor_detach(doc);
+    g_free(doc->path);
+    doc->path = g_steal_pointer(&canonical_path);
+    g_free(doc->relative_path);
+    doc->relative_path = lmme_path_relative_to(doc->app->workspace->path, doc->path);
+    doc->disk_state = LMME_DISK_STATE_NORMAL;
+    if (!lmme_file_fingerprint_read(doc->path, &doc->expected_internal_fingerprint, error)) {
+        lmme_document_file_monitor_attach(doc);
+        return FALSE;
+    }
+    doc->last_known_fingerprint = doc->expected_internal_fingerprint;
+    doc->base_fingerprint = doc->expected_internal_fingerprint;
+    doc->has_expected_internal_fingerprint = TRUE;
+    gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc->buffer), FALSE);
+    lmme_document_cancel_autosave(doc);
+    lmme_document_cancel_recovery(doc);
+    lmme_recovery_remove(doc->app->recovery_store, old_path, NULL);
+    g_clear_pointer(&doc->recovery_source_path, g_free);
+    doc->restored_from_recovery = FALSE;
+    lmme_document_set_save_state(doc, LMME_SAVE_STATE_SAVED);
+    lmme_document_file_monitor_attach(doc);
+    lmme_document_refresh_title(doc);
     return TRUE;
 }
 
@@ -220,10 +443,18 @@ lmme_document_free(LmmeDocument *doc)
 
     lmme_document_cancel_autosave(doc);
     lmme_document_cancel_recovery(doc);
+    if (doc->stats_timeout_id != 0) {
+        g_source_remove(doc->stats_timeout_id);
+    }
     lmme_document_file_monitor_detach(doc);
+    if (doc->clipboard_cancellable != NULL) {
+        g_cancellable_cancel(doc->clipboard_cancellable);
+    }
+    g_clear_object(&doc->clipboard_cancellable);
     g_clear_object(&doc->buffer);
     g_free(doc->path);
     g_free(doc->relative_path);
+    g_free(doc->recovery_source_path);
     g_free(doc);
 }
 
@@ -233,10 +464,20 @@ on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data)
     LmmeDocument *doc = user_data;
     (void)buffer;
 
+    schedule_stats_update(doc);
+    doc->preview_dirty = TRUE;
     lmme_document_set_save_state(doc, LMME_SAVE_STATE_MODIFIED);
-    lmme_document_schedule_recovery(doc);
-    lmme_document_schedule_autosave(doc);
+    if (!doc->app->scheduling_blocked) {
+        lmme_document_schedule_recovery(doc);
+        lmme_document_schedule_autosave(doc);
+    }
     lmme_window_schedule_preview(doc->app);
+}
+
+guint
+lmme_document_cached_word_count(const LmmeDocument *doc)
+{
+    return doc != NULL ? doc->word_count : 0;
 }
 
 static void
@@ -247,7 +488,8 @@ on_cursor_moved(GObject *object, GParamSpec *pspec, gpointer user_data)
     (void)pspec;
 
     if (doc->app->preview_enabled) {
-        lmme_window_refresh_preview_now(doc->app);
+        lmme_document_update_preview_active_line(doc);
+        lmme_window_update_status(doc->app);
     } else {
         lmme_window_update_status(doc->app);
     }

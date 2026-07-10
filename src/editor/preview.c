@@ -29,7 +29,10 @@ static const char *preview_tag_names[] = {
     "lmme-preview-frontmatter",
     "lmme-preview-hidden-marker",
     "lmme-preview-dim-marker",
+    "lmme-preview-active-marker",
 };
+
+static const char *marker_cache_key = "lmme-preview-marker-ranges";
 
 static const char *
 tag_name_for_kind(LmmePreviewRangeKind kind)
@@ -221,6 +224,7 @@ lmme_preview_ensure_tags(GtkTextBuffer *buffer)
                           NULL);
     create_tag_if_missing(buffer, "lmme-preview-hidden-marker", "invisible", TRUE, NULL);
     create_tag_if_missing(buffer, "lmme-preview-dim-marker", "foreground", "#6f7782", NULL);
+    create_tag_if_missing(buffer, "lmme-preview-active-marker", "foreground", "#6f7782", NULL);
 }
 
 void
@@ -244,6 +248,75 @@ lmme_preview_clear_editable_preview(GtkTextBuffer *buffer)
             gtk_text_buffer_remove_tag(buffer, tag, &start, &end);
         }
     }
+    g_object_set_data(G_OBJECT(buffer), marker_cache_key, NULL);
+}
+
+static void
+apply_cached_marker_style_to_line(GtkTextBuffer *buffer, guint line, gboolean active)
+{
+    GtkTextIter line_start;
+    GtkTextIter line_end;
+    GPtrArray *ranges = g_object_get_data(G_OBJECT(buffer), marker_cache_key);
+    GtkTextTagTable *table = NULL;
+    GtkTextTag *hidden = NULL;
+    GtkTextTag *active_marker = NULL;
+    int line_count = gtk_text_buffer_get_line_count(buffer);
+    guint line_start_offset = 0;
+    guint line_end_offset = 0;
+
+    if (ranges == NULL || line > (guint)G_MAXINT || line >= (guint)line_count) {
+        return;
+    }
+    gtk_text_buffer_get_iter_at_line(buffer, &line_start, (int)line);
+    line_end = line_start;
+    gtk_text_iter_forward_to_line_end(&line_end);
+    line_start_offset = (guint)gtk_text_iter_get_offset(&line_start);
+    line_end_offset = (guint)gtk_text_iter_get_offset(&line_end);
+    table = gtk_text_buffer_get_tag_table(buffer);
+    hidden = gtk_text_tag_table_lookup(table, "lmme-preview-hidden-marker");
+    active_marker = gtk_text_tag_table_lookup(table, "lmme-preview-active-marker");
+    if (active_marker != NULL) {
+        gtk_text_buffer_remove_tag(buffer, active_marker, &line_start, &line_end);
+    }
+
+    for (guint i = 0; i < ranges->len; i++) {
+        const LmmePreviewRange *range = g_ptr_array_index(ranges, i);
+        GtkTextIter start;
+        GtkTextIter end;
+
+        if (range->start_offset < line_start_offset || range->end_offset > line_end_offset ||
+            range->end_offset > (guint)G_MAXINT) {
+            continue;
+        }
+        gtk_text_buffer_get_iter_at_offset(buffer, &start, (int)range->start_offset);
+        gtk_text_buffer_get_iter_at_offset(buffer, &end, (int)range->end_offset);
+        if (active) {
+            if (hidden != NULL) {
+                gtk_text_buffer_remove_tag(buffer, hidden, &start, &end);
+            }
+            if (active_marker != NULL) {
+                gtk_text_buffer_apply_tag(buffer, active_marker, &start, &end);
+            }
+        } else if (hidden != NULL) {
+            gtk_text_buffer_apply_tag(buffer, hidden, &start, &end);
+        }
+    }
+}
+
+void
+lmme_preview_update_active_line(GtkTextBuffer *buffer,
+                                guint old_line,
+                                gboolean old_line_valid,
+                                guint new_line)
+{
+    if (buffer == NULL) {
+        return;
+    }
+    lmme_preview_ensure_tags(buffer);
+    if (old_line_valid && old_line != new_line) {
+        apply_cached_marker_style_to_line(buffer, old_line, FALSE);
+    }
+    apply_cached_marker_style_to_line(buffer, new_line, TRUE);
 }
 
 LmmePreviewApplyResult
@@ -256,6 +329,7 @@ lmme_preview_apply_editable_preview(GtkTextBuffer *buffer,
     GtkTextIter cursor;
     guint active_line = 0;
     int total_chars = 0;
+    GPtrArray *marker_ranges = NULL;
 
     if (buffer == NULL) {
         return LMME_PREVIEW_APPLY_FAILED;
@@ -271,12 +345,13 @@ lmme_preview_apply_editable_preview(GtkTextBuffer *buffer,
 
     gtk_text_buffer_get_iter_at_mark(buffer, &cursor, gtk_text_buffer_get_insert(buffer));
     active_line = (guint)gtk_text_iter_get_line(&cursor);
-    ranges = lmme_preview_collect_ranges(text, hide_frontmatter, active_line, hide_markdown_markers);
+    ranges = lmme_preview_collect_ranges(text, hide_frontmatter, G_MAXUINT, hide_markdown_markers);
     if (ranges == NULL) {
         return LMME_PREVIEW_APPLY_FAILED;
     }
 
     total_chars = gtk_text_buffer_get_char_count(buffer);
+    marker_ranges = g_ptr_array_new_with_free_func(g_free);
     for (guint i = 0; i < ranges->len; i++) {
         const LmmePreviewRange *range = g_ptr_array_index(ranges, i);
         const char *tag_name = tag_name_for_kind(range->kind);
@@ -293,7 +368,17 @@ lmme_preview_apply_editable_preview(GtkTextBuffer *buffer,
         gtk_text_buffer_get_iter_at_offset(buffer, &start, (int)range->start_offset);
         gtk_text_buffer_get_iter_at_offset(buffer, &end, (int)range->end_offset);
         gtk_text_buffer_apply_tag_by_name(buffer, tag_name, &start, &end);
+        if (range->kind == LMME_PREVIEW_RANGE_HIDDEN_MARKER) {
+            LmmePreviewRange *copy = g_memdup2(range, sizeof(*range));
+            g_ptr_array_add(marker_ranges, copy);
+        }
     }
+    g_object_set_data_full(G_OBJECT(buffer),
+                           marker_cache_key,
+                           marker_ranges,
+                           (GDestroyNotify)g_ptr_array_unref);
+
+    lmme_preview_update_active_line(buffer, 0, FALSE, active_line);
 
     return LMME_PREVIEW_APPLY_OK;
 }

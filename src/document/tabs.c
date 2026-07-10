@@ -1,7 +1,9 @@
 #include "document/tabs.h"
 
 #include "app/app.h"
+#include "document/document_autosave.h"
 #include "document/file_monitor.h"
+#include "document/recovery.h"
 #include "infra/dialogs.h"
 #include "infra/util.h"
 #include "ui/tab_context_menu.h"
@@ -22,21 +24,6 @@ on_close_tab_clicked(GtkButton *button, gpointer user_data)
     }
 }
 
-static void
-update_tab_title(LmmeDocument *doc)
-{
-    g_autofree char *base = NULL;
-    g_autofree char *title = NULL;
-
-    if (doc == NULL || doc->title_label == NULL) {
-        return;
-    }
-
-    base = g_path_get_basename(doc->path);
-    title = doc->modified ? g_strdup_printf("● %s", base) : g_strdup(base);
-    gtk_label_set_text(GTK_LABEL(doc->title_label), title);
-}
-
 static GtkWidget *
 create_tab_label(LmmeDocument *doc)
 {
@@ -55,7 +42,7 @@ create_tab_label(LmmeDocument *doc)
 
     doc->title_label = label;
     doc->tab_box = box;
-    update_tab_title(doc);
+    lmme_document_refresh_title(doc);
     lmme_tab_context_menu_attach(doc, box);
     return box;
 }
@@ -72,9 +59,17 @@ lmme_tabs_set_preview_visible(LmmeApp *app, gboolean visible)
 
     for (guint i = 0; i < app->documents->len; i++) {
         LmmeDocument *doc = g_ptr_array_index(app->documents, i);
-        LmmePreviewApplyResult result = lmme_document_set_preview_visible(doc, visible);
-        if (doc == active) {
-            active_result = result;
+        if (visible) {
+            doc->preview_dirty = TRUE;
+            gtk_widget_add_css_class(doc->source_view, "preview-edit-mode");
+            if (doc == active) {
+                active_result = lmme_document_set_preview_visible(doc, TRUE);
+            }
+        } else {
+            LmmePreviewApplyResult result = lmme_document_set_preview_visible(doc, FALSE);
+            if (doc == active) {
+                active_result = result;
+            }
         }
     }
 
@@ -98,6 +93,21 @@ lmme_tabs_find_by_path(LmmeApp *app, const char *path)
         }
     }
 
+    return NULL;
+}
+
+LmmeDocument *
+lmme_tabs_find_by_id(LmmeApp *app, guint64 document_id)
+{
+    if (app == NULL || app->documents == NULL || document_id == 0) {
+        return NULL;
+    }
+    for (guint i = 0; i < app->documents->len; i++) {
+        LmmeDocument *doc = g_ptr_array_index(app->documents, i);
+        if (doc->id == document_id) {
+            return doc;
+        }
+    }
     return NULL;
 }
 
@@ -179,15 +189,34 @@ lmme_tabs_open_file(LmmeApp *app, const char *path, GError **error)
 }
 
 gboolean
-lmme_tabs_open_recovery_file(LmmeApp *app, const char *path, const char *title, GError **error)
+lmme_tabs_open_recovery_entry(LmmeApp *app,
+                              const LmmeRecoveryEntry *entry,
+                              GError **error)
 {
     g_autofree char *contents = NULL;
+    g_autoptr(GError) fingerprint_error = NULL;
+    LmmeDocument *doc = NULL;
+    gboolean original_changed = TRUE;
 
-    if (!open_file_contents(path, &contents, error)) {
+    if (app == NULL || entry == NULL || entry->original_path == NULL || entry->recovery_path == NULL) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid recovery entry.");
+        return FALSE;
+    }
+    if (lmme_tabs_find_by_path(app, entry->original_path) != NULL) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_EXIST, "The original file is already open.");
+        return FALSE;
+    }
+    if (!open_file_contents(entry->recovery_path, &contents, error)) {
         return FALSE;
     }
 
-    add_document_to_notebook(app, lmme_document_new(app, path, contents, title));
+    original_changed = lmme_recovery_entry_original_changed(entry, &fingerprint_error);
+    doc = lmme_document_new(app, entry->original_path, contents, entry->original_path);
+    lmme_document_mark_recovered(doc, entry->recovery_path, original_changed);
+    if (!entry->legacy) {
+        doc->base_fingerprint = entry->original_fingerprint;
+    }
+    add_document_to_notebook(app, doc);
     return TRUE;
 }
 
@@ -219,6 +248,48 @@ remove_document(LmmeApp *app, LmmeDocument *doc)
     lmme_document_free(doc);
 }
 
+static gboolean
+prepare_document_close(LmmeDocument *doc)
+{
+    if (doc == NULL || (!doc->modified && !doc->restored_from_recovery &&
+                        doc->disk_state == LMME_DISK_STATE_NORMAL)) {
+        return TRUE;
+    }
+
+    for (;;) {
+        g_autoptr(GError) recovery_error = NULL;
+        g_autoptr(GError) save_error = NULL;
+        gboolean recovery_ok = lmme_document_flush_recovery(doc, &recovery_error);
+        gboolean allow_retry = doc->disk_state == LMME_DISK_STATE_NORMAL;
+        const char *detail = NULL;
+
+        if (allow_retry && lmme_document_save(doc, &save_error)) {
+            return TRUE;
+        }
+        if (!allow_retry) {
+            detail = "The file has an unresolved external change. Recovery was kept; resolve the conflict before overwriting the file.";
+        } else if (save_error != NULL) {
+            detail = save_error->message;
+        } else if (recovery_error != NULL) {
+            detail = recovery_error->message;
+        }
+
+        LmmeSaveFailureChoice choice = lmme_dialog_resolve_save_failure(
+            GTK_WINDOW(doc->app->window),
+            doc->relative_path,
+            detail,
+            allow_retry,
+            recovery_ok);
+        if (choice == LMME_SAVE_FAILURE_RETRY) {
+            continue;
+        }
+        if (choice == LMME_SAVE_FAILURE_KEEP_RECOVERY) {
+            return TRUE;
+        }
+        return FALSE;
+    }
+}
+
 void
 lmme_tabs_close_active(LmmeApp *app)
 {
@@ -229,12 +300,8 @@ lmme_tabs_close_active(LmmeApp *app)
         return;
     }
 
-    if (doc->modified) {
-        g_autoptr(GError) error = NULL;
-        if (!lmme_document_save(doc, &error) &&
-            !lmme_dialog_confirm_close_unsaved(GTK_WINDOW(app->window), doc->relative_path)) {
-            return;
-        }
+    if (!prepare_document_close(doc)) {
+        return;
     }
 
     gtk_notebook_remove_page(GTK_NOTEBOOK(app->notebook), page);
@@ -369,39 +436,196 @@ lmme_tabs_close_all(LmmeApp *app)
     return TRUE;
 }
 
+gboolean
+lmme_tabs_prepare_close_all(LmmeApp *app)
+{
+    if (app == NULL || app->documents == NULL) {
+        return TRUE;
+    }
+    for (guint i = 0; i < app->documents->len; i++) {
+        if (!prepare_document_close(g_ptr_array_index(app->documents, i))) {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+void
+lmme_tabs_resume_pending_saves(LmmeApp *app)
+{
+    if (app == NULL || app->documents == NULL) {
+        return;
+    }
+    for (guint i = 0; i < app->documents->len; i++) {
+        LmmeDocument *doc = g_ptr_array_index(app->documents, i);
+        if (doc->modified || doc->restored_from_recovery ||
+            doc->disk_state != LMME_DISK_STATE_NORMAL) {
+            lmme_document_schedule_recovery(doc);
+            lmme_document_schedule_autosave(doc);
+        }
+    }
+}
+
 void
 lmme_tabs_close_path(LmmeApp *app, const char *path)
 {
-    LmmeDocument *doc = lmme_tabs_find_by_path(app, path);
-    int page = -1;
+    lmme_tabs_forget_subtree(app, path);
+}
 
-    if (doc == NULL) {
-        return;
+GPtrArray *
+lmme_tabs_find_in_subtree(LmmeApp *app, const char *root)
+{
+    GPtrArray *documents = g_ptr_array_new();
+    g_autofree char *canonical_root = NULL;
+
+    if (app == NULL || app->documents == NULL || root == NULL) {
+        return documents;
+    }
+    canonical_root = g_canonicalize_filename(root, NULL);
+    for (guint i = 0; i < app->documents->len; i++) {
+        LmmeDocument *doc = g_ptr_array_index(app->documents, i);
+        if (lmme_path_is_inside(canonical_root, doc->path)) {
+            g_ptr_array_add(documents, doc);
+        }
+    }
+    return documents;
+}
+
+gboolean
+lmme_tabs_validate_subtree_remap(LmmeApp *app,
+                                 const char *old_root,
+                                 const char *new_root,
+                                 GError **error)
+{
+    g_autofree char *canonical_old = NULL;
+    g_autofree char *canonical_new = NULL;
+    g_autoptr(GPtrArray) documents = NULL;
+
+    if (app == NULL || old_root == NULL || new_root == NULL) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid document path remap.");
+        return FALSE;
+    }
+    canonical_old = g_canonicalize_filename(old_root, NULL);
+    canonical_new = g_canonicalize_filename(new_root, NULL);
+    documents = lmme_tabs_find_in_subtree(app, canonical_old);
+
+    for (guint i = 0; i < documents->len; i++) {
+        LmmeDocument *doc = g_ptr_array_index(documents, i);
+        const char *suffix = doc->path + strlen(canonical_old);
+        g_autofree char *new_path = NULL;
+
+        while (*suffix == G_DIR_SEPARATOR) {
+            suffix++;
+        }
+        new_path = suffix[0] == '\0' ? g_strdup(canonical_new)
+                                      : g_build_filename(canonical_new, suffix, NULL);
+        if (lmme_recovery_exists(app->recovery_store, new_path)) {
+            g_set_error_literal(error,
+                                G_FILE_ERROR,
+                                G_FILE_ERROR_EXIST,
+                                "Recovery data already exists for the rename destination.");
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+gboolean
+lmme_tabs_remap_subtree(LmmeApp *app,
+                        const char *old_root,
+                        const char *new_root,
+                        GError **error)
+{
+    g_autofree char *canonical_old = NULL;
+    g_autofree char *canonical_new = NULL;
+    g_autoptr(GPtrArray) documents = NULL;
+    GPtrArray *new_paths = NULL;
+    gboolean success = TRUE;
+
+    if (app == NULL || old_root == NULL || new_root == NULL) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid document path remap.");
+        return FALSE;
+    }
+    canonical_old = g_canonicalize_filename(old_root, NULL);
+    canonical_new = g_canonicalize_filename(new_root, NULL);
+    documents = lmme_tabs_find_in_subtree(app, canonical_old);
+    new_paths = g_ptr_array_new_with_free_func(g_free);
+
+    for (guint i = 0; i < documents->len; i++) {
+        LmmeDocument *doc = g_ptr_array_index(documents, i);
+        const char *suffix = doc->path + strlen(canonical_old);
+        while (*suffix == G_DIR_SEPARATOR) {
+            suffix++;
+        }
+        g_ptr_array_add(new_paths,
+                        suffix[0] == '\0' ? g_strdup(canonical_new)
+                                          : g_build_filename(canonical_new, suffix, NULL));
     }
 
-    page = gtk_notebook_page_num(GTK_NOTEBOOK(app->notebook), doc->scroller);
-    if (page >= 0) {
-        gtk_notebook_remove_page(GTK_NOTEBOOK(app->notebook), page);
+    for (guint i = 0; i < documents->len; i++) {
+        LmmeDocument *doc = g_ptr_array_index(documents, i);
+        const char *new_path = g_ptr_array_index(new_paths, i);
+        g_autofree char *old_path = g_strdup(doc->path);
+        g_autofree char *old_recovery = lmme_recovery_path_for_original(app->recovery_store, old_path);
+        gboolean had_recovery = g_file_test(old_recovery, G_FILE_TEST_IS_REGULAR);
+
+        lmme_document_file_monitor_detach(doc);
+        g_free(doc->path);
+        doc->path = g_strdup(new_path);
+        g_free(doc->relative_path);
+        doc->relative_path = app->workspace != NULL
+                                 ? lmme_path_relative_to(app->workspace->path, doc->path)
+                                 : g_path_get_basename(doc->path);
+
+        if (had_recovery && (doc->modified || doc->restored_from_recovery)) {
+            g_autoptr(GError) recovery_error = NULL;
+            if (!lmme_document_flush_recovery(doc, &recovery_error)) {
+                if (success && error != NULL) {
+                    g_propagate_error(error, g_steal_pointer(&recovery_error));
+                }
+                success = FALSE;
+            } else {
+                lmme_recovery_remove(app->recovery_store, old_path, NULL);
+                g_free(doc->recovery_source_path);
+                doc->recovery_source_path = lmme_recovery_path_for_original(app->recovery_store, doc->path);
+            }
+        } else if (had_recovery) {
+            lmme_recovery_remove(app->recovery_store, old_path, NULL);
+        }
+        lmme_document_file_monitor_attach(doc);
+        lmme_document_refresh_title(doc);
     }
-    remove_document(app, doc);
+
+    g_ptr_array_unref(new_paths);
+    return success;
+}
+
+void
+lmme_tabs_forget_subtree(LmmeApp *app, const char *root)
+{
+    g_autoptr(GPtrArray) documents = lmme_tabs_find_in_subtree(app, root);
+
+    for (guint i = 0; i < documents->len; i++) {
+        LmmeDocument *doc = g_ptr_array_index(documents, i);
+        int page = gtk_notebook_page_num(GTK_NOTEBOOK(app->notebook), doc->scroller);
+        if (page >= 0) {
+            gtk_notebook_remove_page(GTK_NOTEBOOK(app->notebook), page);
+        }
+        lmme_recovery_remove(app->recovery_store, doc->path, NULL);
+        remove_document(app, doc);
+    }
+    lmme_window_update_status(app);
+    lmme_window_schedule_preview(app);
 }
 
 void
 lmme_tabs_update_path(LmmeApp *app, const char *old_path, const char *new_path)
 {
-    LmmeDocument *doc = lmme_tabs_find_by_path(app, old_path);
+    g_autoptr(GError) error = NULL;
 
-    if (doc == NULL) {
-        return;
+    if (!lmme_tabs_remap_subtree(app, old_path, new_path, &error)) {
+        lmme_window_set_status_error(app, "Renamed item, but recovery metadata could not be fully updated");
     }
-
-    g_free(doc->path);
-    doc->path = g_canonicalize_filename(new_path, NULL);
-    g_free(doc->relative_path);
-    doc->relative_path = app->workspace != NULL ? lmme_path_relative_to(app->workspace->path, doc->path) : g_path_get_basename(new_path);
-    lmme_document_file_monitor_detach(doc);
-    lmme_document_file_monitor_attach(doc);
-    update_tab_title(doc);
 }
 
 GPtrArray *

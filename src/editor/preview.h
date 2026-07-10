@@ -14,5 +14,9 @@ LmmePreviewApplyResult lmme_preview_apply_editable_preview(GtkTextBuffer *buffer
                                                            gboolean hide_frontmatter,
                                                            gboolean hide_markdown_markers);
 void lmme_preview_clear_editable_preview(GtkTextBuffer *buffer);
+void lmme_preview_update_active_line(GtkTextBuffer *buffer,
+                                     guint old_line,
+                                     gboolean old_line_valid,
+                                     guint new_line);
 
 #endif

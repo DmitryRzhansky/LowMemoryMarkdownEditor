@@ -4,6 +4,7 @@
 #include <gtk/gtk.h>
 #include <gtksourceview/gtksource.h>
 
+#include "document/file_fingerprint.h"
 #include "editor/preview.h"
 
 typedef struct _LmmeApp LmmeApp;
@@ -16,10 +17,19 @@ typedef enum {
     LMME_SAVE_STATE_ERROR
 } LmmeSaveState;
 
+typedef enum {
+    LMME_DISK_STATE_NORMAL = 0,
+    LMME_DISK_STATE_EXTERNAL_CHANGED,
+    LMME_DISK_STATE_EXTERNAL_DELETED
+} LmmeDiskState;
+
 struct _LmmeDocument {
     LmmeApp *app;
+    guint64 id;
     char *path;
     char *relative_path;
+    char *recovery_source_path;
+    gboolean restored_from_recovery;
 
     GtkWidget *source_view;
     GtkWidget *scroller;
@@ -29,11 +39,23 @@ struct _LmmeDocument {
 
     gboolean modified;
     LmmeSaveState save_state;
+    LmmeDiskState disk_state;
     guint autosave_id;
     guint recovery_id;
+    guint stats_timeout_id;
+    guint word_count;
+    gboolean word_count_dirty;
     gulong changed_handler_id;
+    gboolean preview_dirty;
+    gboolean preview_active_line_valid;
+    guint preview_active_line;
+    guint preview_full_parse_count;
     GFileMonitor *monitor;
-    gint64 last_internal_save_us;
+    LmmeFileFingerprint last_known_fingerprint;
+    LmmeFileFingerprint base_fingerprint;
+    LmmeFileFingerprint expected_internal_fingerprint;
+    gboolean has_expected_internal_fingerprint;
+    GCancellable *clipboard_cancellable;
 };
 
 LmmeDocument *lmme_document_new(LmmeApp *app,
@@ -44,7 +66,16 @@ void lmme_document_free(LmmeDocument *doc);
 
 void lmme_document_set_save_state(LmmeDocument *doc, LmmeSaveState state);
 const char *lmme_document_save_state_label(const LmmeDocument *doc);
+void lmme_document_refresh_title(LmmeDocument *doc);
+void lmme_document_mark_recovered(LmmeDocument *doc,
+                                  const char *recovery_source_path,
+                                  gboolean original_changed);
+gboolean lmme_document_flush_recovery(LmmeDocument *doc, GError **error);
 gboolean lmme_document_save(LmmeDocument *doc, GError **error);
+gboolean lmme_document_overwrite(LmmeDocument *doc, GError **error);
+gboolean lmme_document_save_as(LmmeDocument *doc, const char *new_path, GError **error);
+guint lmme_document_cached_word_count(const LmmeDocument *doc);
 LmmePreviewApplyResult lmme_document_set_preview_visible(LmmeDocument *doc, gboolean visible);
+void lmme_document_update_preview_active_line(LmmeDocument *doc);
 
 #endif

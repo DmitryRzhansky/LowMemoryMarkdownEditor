@@ -9,6 +9,9 @@
 void
 lmme_statusbar_update(LmmeApp *app)
 {
+    if (app == NULL || app->status_label == NULL) {
+        return;
+    }
     LmmeDocument *doc = lmme_tabs_get_active(app);
 
     if (app->workspace == NULL) {
@@ -24,7 +27,7 @@ lmme_statusbar_update(LmmeApp *app)
     int line = 1;
     int column = 1;
     lmme_editor_get_cursor(GTK_TEXT_BUFFER(doc->buffer), &line, &column);
-    guint words = lmme_editor_word_count(GTK_TEXT_BUFFER(doc->buffer));
+    guint words = lmme_document_cached_word_count(doc);
     g_autofree char *status = g_strdup_printf("%s | Ln %d, Col %d | %u words | %s | %s",
                                               doc->relative_path,
                                               line,
@@ -38,5 +41,8 @@ lmme_statusbar_update(LmmeApp *app)
 void
 lmme_statusbar_set_error(LmmeApp *app, const char *message)
 {
+    if (app == NULL || app->status_label == NULL) {
+        return;
+    }
     gtk_label_set_text(GTK_LABEL(app->status_label), message != NULL ? message : "Error");
 }

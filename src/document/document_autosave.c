@@ -5,6 +5,7 @@
 #include "document/recovery.h"
 #include "editor/editor.h"
 #include "ui/window.h"
+#include "workspace/workspace.h"
 
 #include <string.h>
 
@@ -14,9 +15,16 @@ recovery_timeout_cb(gpointer user_data)
     LmmeDocument *doc = user_data;
     g_autofree char *text = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
     g_autoptr(GError) error = NULL;
+    const char *workspace_path = doc->app->workspace != NULL ? doc->app->workspace->path : NULL;
 
     doc->recovery_id = 0;
-    if (!lmme_recovery_write(doc->path, text, strlen(text), &error)) {
+    if (!lmme_recovery_write(doc->app->recovery_store,
+                             doc->path,
+                             workspace_path,
+                             &doc->base_fingerprint,
+                             text,
+                             strlen(text),
+                             &error)) {
         g_warning("Could not write recovery file: %s", error != NULL ? error->message : "unknown error");
     }
 
@@ -43,6 +51,9 @@ autosave_timeout_cb(gpointer user_data)
 void
 lmme_document_schedule_recovery(LmmeDocument *doc)
 {
+    if (doc == NULL || doc->app->scheduling_blocked) {
+        return;
+    }
     lmme_document_cancel_recovery(doc);
     doc->recovery_id = g_timeout_add(2000, recovery_timeout_cb, doc);
 }
@@ -59,7 +70,8 @@ lmme_document_cancel_recovery(LmmeDocument *doc)
 void
 lmme_document_schedule_autosave(LmmeDocument *doc)
 {
-    if (doc == NULL || !doc->app->config.autosave) {
+    if (doc == NULL || !doc->app->config.autosave || doc->app->scheduling_blocked ||
+        doc->disk_state != LMME_DISK_STATE_NORMAL) {
         return;
     }
 

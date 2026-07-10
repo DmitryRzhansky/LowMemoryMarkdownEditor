@@ -1,5 +1,7 @@
 #include "infra/config.h"
 
+#include "infra/safe_write.h"
+
 #include <errno.h>
 #include <string.h>
 
@@ -50,14 +52,6 @@ clamp_uint(guint value, guint min, guint max)
     return value;
 }
 
-static double
-get_double(GKeyFile *key, const char *group, const char *name, double fallback)
-{
-    g_autoptr(GError) error = NULL;
-    const double value = g_key_file_get_double(key, group, name, &error);
-    return error == NULL ? value : fallback;
-}
-
 static char *
 get_string(GKeyFile *key, const char *group, const char *name, const char *fallback)
 {
@@ -85,14 +79,12 @@ lmme_config_init_defaults(LmmeConfig *config)
     config->autosave = TRUE;
     config->autosave_delay_ms = 700;
     config->preview_enabled = FALSE;
-    config->preview_split_ratio = 0.45;
     config->preview_update_delay_ms = 250;
     config->preview_hide_frontmatter = TRUE;
     config->sidebar_width = 260;
     config->show_statusbar = TRUE;
     config->show_toolbar = TRUE;
     config->show_breadcrumbs = TRUE;
-    config->focus_mode = FALSE;
     config->confirm_delete = TRUE;
     config->restore_tabs = TRUE;
     config->open_tabs = g_ptr_array_new_with_free_func(g_free);
@@ -151,7 +143,6 @@ lmme_config_load(LmmeConfig *config, const char *path, GError **error)
     config->autosave_delay_ms = get_uint(key, "editor", "autosave_delay_ms", 700);
 
     config->preview_enabled = get_boolean(key, "preview", "enabled", FALSE);
-    config->preview_split_ratio = get_double(key, "preview", "split_ratio", 0.45);
     config->preview_update_delay_ms = clamp_uint(get_uint(key, "preview", "update_delay_ms", 250), 150, 500);
     config->preview_hide_frontmatter = get_boolean(key, "preview", "hide_frontmatter", TRUE);
 
@@ -159,7 +150,6 @@ lmme_config_load(LmmeConfig *config, const char *path, GError **error)
     config->show_statusbar = get_boolean(key, "ui", "show_statusbar", TRUE);
     config->show_toolbar = get_boolean(key, "ui", "show_toolbar", TRUE);
     config->show_breadcrumbs = get_boolean(key, "ui", "show_breadcrumbs", TRUE);
-    config->focus_mode = get_boolean(key, "ui", "focus_mode", FALSE);
 
     config->confirm_delete = get_boolean(key, "delete", "confirm_delete", TRUE);
     config->restore_tabs = get_boolean(key, "session", "restore_tabs", TRUE);
@@ -208,7 +198,6 @@ lmme_config_save(const LmmeConfig *config, const char *path, GError **error)
     g_key_file_set_integer(key, "editor", "autosave_delay_ms", (int)config->autosave_delay_ms);
 
     g_key_file_set_boolean(key, "preview", "enabled", config->preview_enabled);
-    g_key_file_set_double(key, "preview", "split_ratio", config->preview_split_ratio);
     g_key_file_set_integer(key, "preview", "update_delay_ms", (int)config->preview_update_delay_ms);
     g_key_file_set_boolean(key, "preview", "hide_frontmatter", config->preview_hide_frontmatter);
 
@@ -216,7 +205,6 @@ lmme_config_save(const LmmeConfig *config, const char *path, GError **error)
     g_key_file_set_boolean(key, "ui", "show_statusbar", config->show_statusbar);
     g_key_file_set_boolean(key, "ui", "show_toolbar", config->show_toolbar);
     g_key_file_set_boolean(key, "ui", "show_breadcrumbs", config->show_breadcrumbs);
-    g_key_file_set_boolean(key, "ui", "focus_mode", config->focus_mode);
 
     g_key_file_set_boolean(key, "delete", "confirm_delete", config->confirm_delete);
     g_key_file_set_boolean(key, "session", "restore_tabs", config->restore_tabs);
@@ -234,7 +222,7 @@ lmme_config_save(const LmmeConfig *config, const char *path, GError **error)
         return FALSE;
     }
 
-    return g_file_set_contents(path, data, (gssize)length, error);
+    return lmme_safe_write_file(path, data, length, error);
 }
 
 void

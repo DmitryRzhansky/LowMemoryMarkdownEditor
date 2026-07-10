@@ -7,7 +7,32 @@
 #include "infra/util.h"
 
 typedef struct _LmmeDocument LmmeDocument;
+typedef struct _LmmeRecoveryStore LmmeRecoveryStore;
 typedef struct _LmmeWorkspace LmmeWorkspace;
+
+typedef struct {
+    char *path;
+    LmmeFileKind kind;
+    gboolean empty_area;
+} LmmePathContext;
+
+static inline gboolean
+lmme_path_context_is_directory(const LmmePathContext *context)
+{
+    return context != NULL && context->kind == LMME_FILE_KIND_DIRECTORY;
+}
+
+static inline gboolean
+lmme_path_context_is_markdown(const LmmePathContext *context)
+{
+    return context != NULL && context->kind == LMME_FILE_KIND_MARKDOWN;
+}
+
+static inline gboolean
+lmme_path_context_is_image(const LmmePathContext *context)
+{
+    return context != NULL && context->kind == LMME_FILE_KIND_IMAGE;
+}
 
 typedef struct _LmmeApp {
     GtkApplication *gtk_app;
@@ -16,6 +41,10 @@ typedef struct _LmmeApp {
     LmmeConfig config;
     char *config_path;
     LmmeWorkspace *workspace;
+    LmmeRecoveryStore *recovery_store;
+    guint64 next_document_id;
+    gboolean shutdown_in_progress;
+    gboolean scheduling_blocked;
 
     GtkWidget *root_box;
     GtkWidget *menu_bar;
@@ -32,17 +61,8 @@ typedef struct _LmmeApp {
     GtkWidget *replace_entry;
     GtkWidget *replace_button;
 
-    char *selected_path;
-    gboolean selected_is_dir;
-    gboolean selected_is_markdown;
-    gboolean selected_is_image;
-
-    char *tree_context_path;
-    LmmeFileKind tree_context_kind;
-    gboolean tree_context_is_dir;
-    gboolean tree_context_is_markdown;
-    gboolean tree_context_is_image;
-    gboolean tree_context_is_empty_area;
+    LmmePathContext selection;
+    LmmePathContext tree_context;
 
     /* TRUE means editable inline preview mode, not a separate preview widget. */
     gboolean preview_enabled;
@@ -56,6 +76,7 @@ typedef struct _LmmeApp {
 } LmmeApp;
 
 int lmme_app_run(int argc, char **argv);
+gboolean lmme_app_request_shutdown(LmmeApp *app);
 void lmme_app_free(LmmeApp *app);
 
 #endif

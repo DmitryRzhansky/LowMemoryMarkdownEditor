@@ -24,7 +24,7 @@ lmme_toolbar_create(void)
     gtk_box_append(GTK_BOX(toolbar), make_icon_button("document-new-symbolic", "New Markdown File", "app.new-file"));
     gtk_box_append(GTK_BOX(toolbar), make_icon_button("folder-new-symbolic", "New Folder", "app.new-folder"));
     gtk_box_append(GTK_BOX(toolbar), make_icon_button("document-save-symbolic", "Save", "app.save"));
-    gtk_box_append(GTK_BOX(toolbar), make_icon_button("view-split-left-right-symbolic", "Editor + Preview", "app.toggle-preview"));
+    gtk_box_append(GTK_BOX(toolbar), make_icon_button("view-preview-symbolic", "Toggle Editable Preview", "app.toggle-preview"));
     gtk_box_append(GTK_BOX(toolbar), make_icon_button("image-x-generic-symbolic", "Insert Image", "app.insert-image"));
     gtk_box_append(GTK_BOX(toolbar), make_icon_button("edit-find-symbolic", "Find", "app.find"));
     gtk_box_append(GTK_BOX(toolbar), make_icon_button("edit-find-replace-symbolic", "Replace", "app.replace"));

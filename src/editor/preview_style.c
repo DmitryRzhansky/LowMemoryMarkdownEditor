@@ -2,19 +2,64 @@
 
 #include <string.h>
 
-static guint
-byte_offset_to_char_offset(const char *text, gsize byte_offset)
+typedef struct {
+    guint byte_offset;
+    guint *destination;
+} LmmePreviewEndpoint;
+
+static gint
+endpoint_compare(gconstpointer left, gconstpointer right)
 {
-    const char *p = text;
-    const char *end = text + byte_offset;
-    guint chars = 0;
+    const LmmePreviewEndpoint *a = left;
+    const LmmePreviewEndpoint *b = right;
+    return a->byte_offset < b->byte_offset ? -1 : a->byte_offset > b->byte_offset;
+}
 
-    while (p < end && *p != '\0') {
-        p = g_utf8_next_char(p);
-        chars++;
+static gint
+range_compare(gconstpointer left, gconstpointer right)
+{
+    const LmmePreviewRange *a = *(LmmePreviewRange * const *)left;
+    const LmmePreviewRange *b = *(LmmePreviewRange * const *)right;
+
+    if (a->start_offset != b->start_offset) {
+        return a->start_offset < b->start_offset ? -1 : 1;
     }
+    if (a->end_offset != b->end_offset) {
+        return a->end_offset < b->end_offset ? -1 : 1;
+    }
+    return (gint)a->kind - (gint)b->kind;
+}
 
-    return chars;
+static void
+convert_byte_ranges_to_char_ranges(const char *text, GPtrArray *ranges)
+{
+    g_autoptr(GArray) endpoints = g_array_sized_new(FALSE,
+                                                    FALSE,
+                                                    sizeof(LmmePreviewEndpoint),
+                                                    ranges->len * 2);
+    const char *cursor = text;
+    guint byte_offset = 0;
+    guint char_offset = 0;
+
+    for (guint i = 0; i < ranges->len; i++) {
+        LmmePreviewRange *range = g_ptr_array_index(ranges, i);
+        LmmePreviewEndpoint start = {range->start_offset, &range->start_offset};
+        LmmePreviewEndpoint end = {range->end_offset, &range->end_offset};
+        g_array_append_val(endpoints, start);
+        g_array_append_val(endpoints, end);
+    }
+    g_array_sort(endpoints, endpoint_compare);
+    for (guint i = 0; i < endpoints->len; i++) {
+        LmmePreviewEndpoint *endpoint = &g_array_index(endpoints, LmmePreviewEndpoint, i);
+        while (byte_offset < endpoint->byte_offset && *cursor != '\0') {
+            const char *next = g_utf8_next_char(cursor);
+            byte_offset += (guint)(next - cursor);
+            char_offset++;
+            cursor = next;
+        }
+        *endpoint->destination = char_offset;
+    }
+    g_ptr_array_sort(ranges, range_compare);
 }
 
 static void
@@ -26,14 +71,20 @@ add_range_bytes(GPtrArray *ranges,
 {
     LmmePreviewRange *range = NULL;
 
+    (void)text;
+
     if (end_byte <= start_byte) {
         return;
     }
 
     range = g_new0(LmmePreviewRange, 1);
     range->kind = kind;
-    range->start_offset = byte_offset_to_char_offset(text, start_byte);
-    range->end_offset = byte_offset_to_char_offset(text, end_byte);
+    if (start_byte > G_MAXUINT || end_byte > G_MAXUINT) {
+        g_free(range);
+        return;
+    }
+    range->start_offset = (guint)start_byte;
+    range->end_offset = (guint)end_byte;
 
     if (range->end_offset <= range->start_offset) {
         g_free(range);
@@ -538,5 +589,6 @@ lmme_preview_collect_ranges(const char *markdown,
                         strlen(text));
     }
 
+    convert_byte_ranges_to_char_ranges(text, ranges);
     return ranges;
 }

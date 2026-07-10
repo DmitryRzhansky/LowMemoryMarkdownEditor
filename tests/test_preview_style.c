@@ -152,6 +152,22 @@ test_cyrillic_offsets(void)
     g_assert_true(has_range(ranges, LMME_PREVIEW_RANGE_BOLD, bold_start, bold_start + char_len("мир")));
 }
 
+static void
+test_ranges_are_sorted_and_bounded(void)
+{
+    const char *input = "# Heading with **bold** and [link](target)\n- [x] task\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+    guint previous_start = 0;
+
+    for (guint i = 0; i < ranges->len; i++) {
+        const LmmePreviewRange *range = g_ptr_array_index(ranges, i);
+        g_assert_cmpuint(range->start_offset, <=, range->end_offset);
+        g_assert_cmpuint(range->end_offset, <=, char_len(input));
+        g_assert_cmpuint(range->start_offset, >=, previous_start);
+        previous_start = range->start_offset;
+    }
+}
+
 int
 main(int argc, char **argv)
 {
@@ -165,5 +181,6 @@ main(int argc, char **argv)
     g_test_add_func("/preview-style/links-images", test_links_and_images);
     g_test_add_func("/preview-style/lists-tasks", test_lists_and_tasks);
     g_test_add_func("/preview-style/cyrillic-offsets", test_cyrillic_offsets);
+    g_test_add_func("/preview-style/sorted-bounded", test_ranges_are_sorted_and_bounded);
     return g_test_run();
 }

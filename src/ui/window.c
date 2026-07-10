@@ -2,7 +2,6 @@
 
 #include "app/app.h"
 #include "command/command_actions.h"
-#include "command/command_shortcuts.h"
 #include "document/document.h"
 #include "document/recovery.h"
 #include "document/tabs.h"
@@ -28,59 +27,6 @@ load_css(void)
                                                GTK_STYLE_PROVIDER(provider),
                                                GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(provider);
-}
-
-static void
-on_tree_selection_changed(GtkTreeSelection *selection, gpointer user_data)
-{
-    LmmeApp *app = user_data;
-    LmmeFileKind kind = LMME_FILE_KIND_OTHER;
-
-    (void)selection;
-    g_clear_pointer(&app->selected_path, g_free);
-    app->selected_is_dir = FALSE;
-    app->selected_is_markdown = FALSE;
-    app->selected_is_image = FALSE;
-    if (lmme_file_tree_get_selected(app->tree_view, &app->selected_path, &kind)) {
-        app->selected_is_dir = kind == LMME_FILE_KIND_DIRECTORY;
-        app->selected_is_markdown = kind == LMME_FILE_KIND_MARKDOWN;
-        app->selected_is_image = kind == LMME_FILE_KIND_IMAGE;
-    }
-}
-
-static void
-on_tree_row_activated(GtkTreeView *tree_view,
-                      GtkTreePath *path,
-                      GtkTreeViewColumn *column,
-                      gpointer user_data)
-{
-    LmmeApp *app = user_data;
-    GtkTreeModel *model = gtk_tree_view_get_model(tree_view);
-    GtkTreeIter iter;
-    int kind = 0;
-    g_autofree char *file_path = NULL;
-
-    (void)column;
-    if (!gtk_tree_model_get_iter(model, &iter, path)) {
-        return;
-    }
-
-    gtk_tree_model_get(model, &iter, LMME_TREE_COL_PATH, &file_path, LMME_TREE_COL_KIND, &kind, -1);
-    if ((LmmeFileKind)kind == LMME_FILE_KIND_DIRECTORY) {
-        if (gtk_tree_view_row_expanded(tree_view, path)) {
-            gtk_tree_view_collapse_row(tree_view, path);
-        } else {
-            gtk_tree_view_expand_row(tree_view, path, FALSE);
-        }
-        return;
-    }
-
-    if ((LmmeFileKind)kind == LMME_FILE_KIND_MARKDOWN) {
-        g_autoptr(GError) error = NULL;
-        if (!lmme_tabs_open_file(app, file_path, &error)) {
-            lmme_dialog_error(GTK_WINDOW(app->window), "Could not read file.", error != NULL ? error->message : NULL);
-        }
-    }
 }
 
 static void
@@ -111,36 +57,79 @@ on_window_search_key_pressed(GtkEventControllerKey *controller,
     return lmme_search_bar_handle_key_press(user_data, keyval);
 }
 
+static gboolean
+on_window_close_request(GtkWindow *window, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    (void)window;
+
+    if (app->shutdown_in_progress) {
+        return FALSE;
+    }
+    (void)lmme_app_request_shutdown(app);
+    return TRUE;
+}
+
 static void
 restore_recovery_files(LmmeApp *app)
 {
     g_autoptr(GError) error = NULL;
-    GPtrArray *entries = lmme_recovery_list(&error);
+    GPtrArray *entries = lmme_recovery_list(app->recovery_store, &error);
 
     if (entries == NULL) {
+        if (error != NULL) {
+            lmme_dialog_error(GTK_WINDOW(app->window), "Could not inspect recovery data.", error->message);
+        }
         return;
     }
-    if (entries->len > 0) {
-        GString *detail = g_string_new(NULL);
-        for (guint i = 0; i < entries->len; i++) {
-            LmmeRecoveryEntry *entry = g_ptr_array_index(entries, i);
-            g_string_append_printf(detail, "%s\n", entry->original_path);
-            lmme_tabs_open_recovery_file(app, entry->recovery_path, entry->original_path, NULL);
+    for (guint i = 0; i < entries->len; i++) {
+        LmmeRecoveryEntry *entry = g_ptr_array_index(entries, i);
+        g_autoptr(GError) changed_error = NULL;
+        gboolean belongs_to_workspace = app->workspace != NULL &&
+                                        lmme_recovery_entry_belongs_to_workspace(entry,
+                                                                                 app->workspace->path);
+        gboolean original_changed = FALSE;
+        LmmeRecoveryChoice choice = LMME_RECOVERY_CHOICE_LATER;
+
+        if (!belongs_to_workspace) {
+            continue;
         }
-        lmme_dialog_info(GTK_WINDOW(app->window), "Unsaved recovery files were found.", detail->str);
-        g_string_free(detail, TRUE);
+        original_changed = lmme_recovery_entry_original_changed(entry, &changed_error);
+        choice = lmme_dialog_choose_recovery(GTK_WINDOW(app->window),
+                                             entry->original_path,
+                                             original_changed);
+        if (choice == LMME_RECOVERY_CHOICE_RESTORE) {
+            g_autoptr(GError) open_error = NULL;
+            if (!lmme_tabs_open_recovery_entry(app, entry, &open_error)) {
+                lmme_dialog_error(GTK_WINDOW(app->window),
+                                  "Could not restore recovery data.",
+                                  open_error != NULL ? open_error->message : NULL);
+            }
+        } else if (choice == LMME_RECOVERY_CHOICE_DISCARD) {
+            g_autoptr(GError) remove_error = NULL;
+            if (!lmme_recovery_remove(app->recovery_store, entry->original_path, &remove_error)) {
+                lmme_dialog_error(GTK_WINDOW(app->window),
+                                  "Could not discard recovery data.",
+                                  remove_error != NULL ? remove_error->message : NULL);
+            }
+        }
     }
     g_ptr_array_unref(entries);
 }
 
 static void
-restore_workspace_and_tabs(LmmeApp *app)
+restore_workspace(LmmeApp *app)
 {
     if (app->config.restore_last_workspace && app->config.last_workspace != NULL &&
         app->config.last_workspace[0] != '\0' && g_file_test(app->config.last_workspace, G_FILE_TEST_IS_DIR)) {
         lmme_window_open_workspace_path(app, app->config.last_workspace);
     }
 
+}
+
+static void
+restore_tabs(LmmeApp *app)
+{
     if (app->workspace != NULL && app->config.restore_tabs && app->config.open_tabs != NULL) {
         for (guint i = 0; i < app->config.open_tabs->len; i++) {
             const char *path = g_ptr_array_index(app->config.open_tabs, i);
@@ -155,15 +144,14 @@ void
 lmme_window_build(LmmeApp *app)
 {
     GMenuModel *menu_model = NULL;
-    GtkTreeSelection *selection = NULL;
     GtkEventController *search_key = NULL;
 
     load_css();
     lmme_editor_apply_font_css(&app->config);
     lmme_command_actions_register(app);
-    lmme_command_shortcuts_apply(app);
 
     app->window = gtk_application_window_new(app->gtk_app);
+    g_signal_connect(app->window, "close-request", G_CALLBACK(on_window_close_request), app);
     gtk_window_set_title(GTK_WINDOW(app->window), "LowMemoryMarkdownEditor");
     gtk_window_set_default_size(GTK_WINDOW(app->window), app->config.window_width, app->config.window_height);
     if (app->config.window_maximized) {
@@ -187,7 +175,7 @@ lmme_window_build(LmmeApp *app)
     app->sidebar = gtk_scrolled_window_new();
     gtk_widget_add_css_class(app->sidebar, "sidebar");
     gtk_widget_set_size_request(app->sidebar, app->config.sidebar_width, -1);
-    app->tree_view = lmme_file_tree_create();
+    app->tree_view = lmme_file_tree_create(app);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(app->sidebar), app->tree_view);
     gtk_paned_set_start_child(GTK_PANED(app->main_paned), app->sidebar);
 
@@ -215,9 +203,6 @@ lmme_window_build(LmmeApp *app)
     gtk_widget_add_css_class(app->status_label, "statusbar");
     gtk_box_append(GTK_BOX(app->root_box), app->status_label);
 
-    selection = gtk_tree_view_get_selection(GTK_TREE_VIEW(app->tree_view));
-    g_signal_connect(selection, "changed", G_CALLBACK(on_tree_selection_changed), app);
-    g_signal_connect(app->tree_view, "row-activated", G_CALLBACK(on_tree_row_activated), app);
     lmme_tree_context_menu_attach(app);
     g_signal_connect(app->notebook, "switch-page", G_CALLBACK(on_notebook_switch_page), app);
 
@@ -226,8 +211,9 @@ lmme_window_build(LmmeApp *app)
     gtk_widget_set_visible(app->status_label, app->config.show_statusbar);
     gtk_widget_set_visible(app->breadcrumbs_label, app->config.show_breadcrumbs);
     gtk_paned_set_position(GTK_PANED(app->main_paned), app->config.sidebar_width);
-    restore_workspace_and_tabs(app);
+    restore_workspace(app);
     restore_recovery_files(app);
+    restore_tabs(app);
     lmme_window_update_status(app);
 }
 
@@ -247,6 +233,10 @@ lmme_window_open_workspace_path(LmmeApp *app, const char *path)
         return FALSE;
     }
 
+    lmme_file_tree_populate(app->tree_view,
+                            NULL,
+                            app->config.show_hidden_files,
+                            app->config.show_images);
     g_clear_pointer(&app->workspace, lmme_workspace_free);
     app->workspace = workspace;
     lmme_config_set_last_workspace(&app->config, app->workspace->path);
@@ -259,17 +249,38 @@ lmme_window_open_workspace_path(LmmeApp *app, const char *path)
 void
 lmme_window_refresh_tree(LmmeApp *app)
 {
+    if (app->workspace == NULL) {
+        lmme_file_tree_populate(app->tree_view,
+                                NULL,
+                                app->config.show_hidden_files,
+                                app->config.show_images);
+        return;
+    }
+    lmme_file_tree_populate(app->tree_view,
+                            app->workspace,
+                            app->config.show_hidden_files,
+                            app->config.show_images);
+}
+
+void
+lmme_window_refresh_tree_directory(LmmeApp *app, const char *directory_path)
+{
     g_autoptr(GError) error = NULL;
 
-    if (app->workspace == NULL) {
-        lmme_file_tree_populate(app->tree_view, NULL);
+    if (app == NULL || app->workspace == NULL || directory_path == NULL) {
         return;
     }
-    if (!lmme_workspace_rescan(app->workspace, app->config.show_hidden_files, app->config.show_images, &error)) {
-        lmme_dialog_error(GTK_WINDOW(app->window), "Could not open workspace.", error != NULL ? error->message : NULL);
+    if (!lmme_workspace_refresh_directory(app->workspace,
+                                          directory_path,
+                                          app->config.show_hidden_files,
+                                          app->config.show_images,
+                                          &error)) {
+        if (error != NULL && !g_error_matches(error, G_FILE_ERROR, G_FILE_ERROR_NOENT)) {
+            lmme_dialog_error(GTK_WINDOW(app->window), "Could not refresh workspace.", error->message);
+        }
         return;
     }
-    lmme_file_tree_populate(app->tree_view, app->workspace->root);
+    lmme_window_refresh_tree(app);
 }
 
 void
@@ -342,6 +353,11 @@ lmme_window_refresh_preview_now(LmmeApp *app)
 
     doc = lmme_tabs_get_active(app);
     if (doc == NULL) {
+        lmme_window_update_status(app);
+        return;
+    }
+    if (!doc->preview_dirty) {
+        lmme_document_update_preview_active_line(doc);
         lmme_window_update_status(app);
         return;
     }

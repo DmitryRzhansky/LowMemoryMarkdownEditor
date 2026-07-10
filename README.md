@@ -9,11 +9,14 @@ Small Linux-only GTK Markdown editor focused on low memory usage and local folde
 - edits Markdown files with GtkSourceView
 - supports tabs
 - supports autosave and manual save
+- preserves unsaved recovery data during shutdown and restores it to the original Markdown path
+- detects external file changes without a time-based ignore window
 - toggles between Source and single-pane Editable Preview styling
 - supports editor font zoom with Ctrl++, Ctrl+-, Ctrl+0, and numpad variants
 - supports image insertion into a workspace-level `img` folder
 - uses lightweight system GTK symbolic icons for toolbar, tabs, and file tree
 - provides a right-click context menu for workspace file tree actions
+- scans workspace directories lazily as they are expanded
 - uses a compact light-gray GTK theme
 - stores basic config in `~/.config/lmme/config.ini`
 
@@ -32,7 +35,7 @@ Small Linux-only GTK Markdown editor focused on low memory usage and local folde
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential meson ninja-build pkg-config libgtk-4-dev libgtksourceview-5-dev libcmark-dev
+sudo apt install -y build-essential meson ninja-build pkg-config libgtk-4-dev libgtksourceview-5-dev
 ```
 
 If your distribution names the pkg-config implementation `pkgconf`, install it too:
@@ -78,7 +81,7 @@ Editable Preview is a same-buffer styling layer for Markdown source, not WYSIWYG
 
 `src/app` contains application lifecycle and global state.
 `src/ui` contains GTK layout, menus, toolbars, status bar and context menus.
-`src/command` contains command metadata, GTK action callbacks and shortcuts.
+`src/command` contains the command catalog, GTK action dispatch and shortcuts.
 `src/document` contains document state, tabs, autosave, recovery and file monitoring.
 `src/workspace` contains workspace scanning and file operations.
 `src/editor` contains GtkSourceView setup, editing operations, search and preview logic.

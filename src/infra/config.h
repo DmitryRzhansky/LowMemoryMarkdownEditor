@@ -25,8 +25,6 @@ typedef struct {
     guint autosave_delay_ms;
 
     gboolean preview_enabled;
-    /* Legacy key. Kept for config compatibility. Editable preview is single-pane. */
-    double preview_split_ratio;
     guint preview_update_delay_ms;
     gboolean preview_hide_frontmatter;
 
@@ -34,8 +32,6 @@ typedef struct {
     gboolean show_statusbar;
     gboolean show_toolbar;
     gboolean show_breadcrumbs;
-    gboolean focus_mode;
-
     gboolean confirm_delete;
     gboolean restore_tabs;
     GPtrArray *open_tabs;

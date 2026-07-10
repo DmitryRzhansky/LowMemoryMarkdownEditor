@@ -1,17 +1,16 @@
+#define _GNU_SOURCE
+
 #include "workspace/workspace.h"
 
 #include <errno.h>
+#include <fcntl.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <gio/gio.h>
 #include <glib/gstdio.h>
-
-static LmmeFileNode *scan_dir(const char *path,
-                              gboolean is_root,
-                              gboolean show_hidden_files,
-                              gboolean show_images,
-                              GHashTable *visited,
-                              GError **error);
 
 static int
 kind_sort_rank(LmmeFileKind kind)
@@ -63,12 +62,6 @@ is_directory_no_follow(const char *path)
            !g_file_info_get_is_symlink(info);
 }
 
-static char *
-real_path_for_visit(const char *path)
-{
-    return g_canonicalize_filename(path, NULL);
-}
-
 static LmmeFileNode *
 node_new(const char *path, const char *name, LmmeFileKind kind)
 {
@@ -77,6 +70,7 @@ node_new(const char *path, const char *name, LmmeFileKind kind)
     node->name = g_strdup(name);
     node->kind = kind;
     node->children = kind == LMME_FILE_KIND_DIRECTORY ? g_ptr_array_new_with_free_func((GDestroyNotify)lmme_file_node_free) : NULL;
+    node->loaded = kind != LMME_FILE_KIND_DIRECTORY;
     return node;
 }
 
@@ -119,45 +113,46 @@ lmme_workspace_rescan(LmmeWorkspace *workspace,
                       gboolean show_images,
                       GError **error)
 {
-    g_autoptr(GHashTable) visited = NULL;
+    g_autofree char *base = NULL;
 
     if (workspace == NULL || !g_file_test(workspace->path, G_FILE_TEST_IS_DIR)) {
         g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_NOENT, "Could not open workspace.");
         return FALSE;
     }
 
-    visited = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
     g_clear_pointer(&workspace->root, lmme_file_node_free);
-    workspace->root = scan_dir(workspace->path, TRUE, show_hidden_files, show_images, visited, error);
-
-    return workspace->root != NULL;
+    base = g_path_get_basename(workspace->path);
+    workspace->root = node_new(workspace->path, base, LMME_FILE_KIND_DIRECTORY);
+    return lmme_workspace_load_directory(workspace,
+                                         workspace->root,
+                                         show_hidden_files,
+                                         show_images,
+                                         error);
 }
 
-static LmmeFileNode *
-scan_dir(const char *path,
-         gboolean is_root,
-         gboolean show_hidden_files,
-         gboolean show_images,
-         GHashTable *visited,
-         GError **error)
+gboolean
+lmme_workspace_load_directory(LmmeWorkspace *workspace,
+                              LmmeFileNode *node,
+                              gboolean show_hidden_files,
+                              gboolean show_images,
+                              GError **error)
 {
-    g_autofree char *base = g_path_get_basename(path);
-    g_autofree char *real = real_path_for_visit(path);
     g_autoptr(GDir) dir = NULL;
-    LmmeFileNode *node = NULL;
     const char *name = NULL;
 
-    if (g_hash_table_contains(visited, real)) {
-        return NULL;
+    if (workspace == NULL || node == NULL || node->kind != LMME_FILE_KIND_DIRECTORY ||
+        !lmme_path_is_inside(workspace->path, node->path)) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid workspace directory node.");
+        return FALSE;
     }
-    g_hash_table_add(visited, g_strdup(real));
-
-    dir = g_dir_open(path, 0, error);
+    if (node->loaded && !node->dirty) {
+        return TRUE;
+    }
+    dir = g_dir_open(node->path, 0, error);
     if (dir == NULL) {
-        return NULL;
+        return FALSE;
     }
-
-    node = node_new(path, is_root ? base : base, LMME_FILE_KIND_DIRECTORY);
+    g_ptr_array_set_size(node->children, 0);
 
     while ((name = g_dir_read_name(dir)) != NULL) {
         g_autofree char *child_path = NULL;
@@ -171,22 +166,75 @@ scan_dir(const char *path,
             continue;
         }
 
-        child_path = g_build_filename(path, name, NULL);
+        child_path = g_build_filename(node->path, name, NULL);
         child_is_dir = is_directory_no_follow(child_path);
         kind = lmme_file_kind_from_path(child_path, child_is_dir, show_images);
 
         if (kind == LMME_FILE_KIND_DIRECTORY) {
-            LmmeFileNode *child = scan_dir(child_path, FALSE, show_hidden_files, show_images, visited, NULL);
-            if (child != NULL) {
-                g_ptr_array_add(node->children, child);
-            }
+            g_ptr_array_add(node->children,
+                            node_new(child_path, name, LMME_FILE_KIND_DIRECTORY));
         } else if (kind == LMME_FILE_KIND_MARKDOWN || kind == LMME_FILE_KIND_IMAGE) {
             g_ptr_array_add(node->children, node_new(child_path, name, kind));
         }
     }
 
     g_ptr_array_sort(node->children, node_compare);
-    return node;
+    node->loaded = TRUE;
+    node->dirty = FALSE;
+    return TRUE;
+}
+
+static LmmeFileNode *
+find_node_recursive(LmmeFileNode *node, const char *canonical_path)
+{
+    if (node == NULL) {
+        return NULL;
+    }
+    if (g_strcmp0(node->path, canonical_path) == 0) {
+        return node;
+    }
+    if (!node->loaded || node->children == NULL) {
+        return NULL;
+    }
+    for (guint i = 0; i < node->children->len; i++) {
+        LmmeFileNode *found = find_node_recursive(g_ptr_array_index(node->children, i), canonical_path);
+        if (found != NULL) {
+            return found;
+        }
+    }
+    return NULL;
+}
+
+LmmeFileNode *
+lmme_workspace_find_node(LmmeWorkspace *workspace, const char *path)
+{
+    g_autofree char *canonical_path = NULL;
+
+    if (workspace == NULL || path == NULL) {
+        return NULL;
+    }
+    canonical_path = g_canonicalize_filename(path, NULL);
+    return find_node_recursive(workspace->root, canonical_path);
+}
+
+gboolean
+lmme_workspace_refresh_directory(LmmeWorkspace *workspace,
+                                 const char *directory_path,
+                                 gboolean show_hidden_files,
+                                 gboolean show_images,
+                                 GError **error)
+{
+    LmmeFileNode *node = lmme_workspace_find_node(workspace, directory_path);
+
+    if (node == NULL) {
+        if (workspace != NULL && g_strcmp0(workspace->path, directory_path) == 0) {
+            return lmme_workspace_rescan(workspace, show_hidden_files, show_images, error);
+        }
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_NOENT, "Workspace directory is not loaded.");
+        return FALSE;
+    }
+    node->dirty = TRUE;
+    return lmme_workspace_load_directory(workspace, node, show_hidden_files, show_images, error);
 }
 
 static gboolean
@@ -194,6 +242,39 @@ ensure_workspace_target(const LmmeWorkspace *workspace, const char *path, GError
 {
     if (workspace == NULL || path == NULL || !lmme_path_is_inside(workspace->path, path)) {
         g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_PERM, "Target is outside the workspace.");
+        return FALSE;
+    }
+    return TRUE;
+}
+
+gboolean
+lmme_workspace_validate_target_parent(const LmmeWorkspace *workspace,
+                                      const char *path,
+                                      GError **error)
+{
+    g_autofree char *parent = NULL;
+    g_autofree char *workspace_real = NULL;
+    g_autofree char *parent_real = NULL;
+
+    if (!ensure_workspace_target(workspace, path, error)) {
+        return FALSE;
+    }
+
+    parent = g_path_get_dirname(path);
+    workspace_real = realpath(workspace->path, NULL);
+    parent_real = realpath(parent, NULL);
+    if (workspace_real == NULL || parent_real == NULL) {
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    g_file_error_from_errno(errno),
+                    "Could not resolve the workspace path safely.");
+        return FALSE;
+    }
+    if (!lmme_path_is_inside(workspace_real, parent_real)) {
+        g_set_error_literal(error,
+                            G_FILE_ERROR,
+                            G_FILE_ERROR_PERM,
+                            "Target resolves outside the workspace.");
         return FALSE;
     }
     return TRUE;
@@ -229,14 +310,21 @@ lmme_workspace_create_markdown_file(const LmmeWorkspace *workspace,
     filename = clean_markdown_filename(name);
     path = g_build_filename(base_dir, filename, NULL);
 
-    if (!ensure_workspace_target(workspace, path, error)) {
+    if (!lmme_workspace_validate_target_parent(workspace, path, error)) {
         return FALSE;
     }
-    if (g_file_test(path, G_FILE_TEST_EXISTS)) {
-        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_EXIST, "A file with this name already exists.");
+    int fd = g_open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+    if (fd < 0) {
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    g_file_error_from_errno(errno),
+                    errno == EEXIST ? "A file with this name already exists."
+                                     : "Could not create Markdown file.");
         return FALSE;
     }
-    if (!g_file_set_contents(path, "", 0, error)) {
+    if (close(fd) != 0) {
+        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not close new Markdown file.");
+        g_unlink(path);
         return FALSE;
     }
 
@@ -262,7 +350,7 @@ lmme_workspace_create_folder(const LmmeWorkspace *workspace,
     }
 
     path = g_build_filename(base_dir, trimmed, NULL);
-    if (!ensure_workspace_target(workspace, path, error)) {
+    if (!lmme_workspace_validate_target_parent(workspace, path, error)) {
         return FALSE;
     }
     if (g_file_test(path, G_FILE_TEST_EXISTS)) {
@@ -289,18 +377,23 @@ lmme_workspace_rename_path(const LmmeWorkspace *workspace,
     g_autofree char *dir = NULL;
     g_autofree char *target = NULL;
 
-    if (!ensure_workspace_target(workspace, path, error) || !lmme_validate_basename(trimmed, error)) {
+    if (!lmme_workspace_validate_target_parent(workspace, path, error) ||
+        !lmme_validate_basename(trimmed, error)) {
         return FALSE;
     }
 
     dir = g_path_get_dirname(path);
     target = g_build_filename(dir, trimmed, NULL);
 
-    if (!ensure_workspace_target(workspace, target, error)) {
+    if (!lmme_workspace_validate_target_parent(workspace, target, error)) {
         return FALSE;
     }
-    if (g_file_test(target, G_FILE_TEST_EXISTS)) {
+    struct stat target_info;
+    if (lstat(target, &target_info) == 0) {
         g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_EXIST, "A file with this name already exists.");
+        return FALSE;
+    } else if (errno != ENOENT) {
+        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not inspect rename destination.");
         return FALSE;
     }
     if (g_rename(path, target) != 0) {
@@ -316,9 +409,49 @@ lmme_workspace_rename_path(const LmmeWorkspace *workspace,
 }
 
 static gboolean
+preflight_delete_path(const char *path, dev_t workspace_device, GError **error)
+{
+    struct stat info;
+
+    if (lstat(path, &info) != 0) {
+        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not inspect item before deletion.");
+        return FALSE;
+    }
+    if (S_ISLNK(info.st_mode) || !S_ISDIR(info.st_mode)) {
+        return TRUE;
+    }
+    if (info.st_dev != workspace_device) {
+        g_set_error_literal(error,
+                            G_FILE_ERROR,
+                            G_FILE_ERROR_PERM,
+                            "Cannot recursively delete across a filesystem or mount boundary.");
+        return FALSE;
+    }
+
+    g_autoptr(GDir) dir = g_dir_open(path, 0, error);
+    const char *name = NULL;
+    if (dir == NULL) {
+        return FALSE;
+    }
+    while ((name = g_dir_read_name(dir)) != NULL) {
+        g_autofree char *child = g_build_filename(path, name, NULL);
+        if (!preflight_delete_path(child, workspace_device, error)) {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+static gboolean
 delete_path_recursive(const char *path, GError **error)
 {
-    if (is_directory_no_follow(path)) {
+    struct stat info;
+
+    if (lstat(path, &info) != 0) {
+        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not inspect item during deletion.");
+        return FALSE;
+    }
+    if (S_ISDIR(info.st_mode) && !S_ISLNK(info.st_mode)) {
         g_autoptr(GDir) dir = g_dir_open(path, 0, error);
         const char *name = NULL;
 
@@ -348,10 +481,21 @@ delete_path_recursive(const char *path, GError **error)
 gboolean
 lmme_workspace_delete_path(const LmmeWorkspace *workspace, const char *path, GError **error)
 {
-    if (!ensure_workspace_target(workspace, path, error) || g_strcmp0(workspace->path, path) == 0) {
+    struct stat workspace_info;
+
+    if (!lmme_workspace_validate_target_parent(workspace, path, error) ||
+        g_strcmp0(workspace->path, path) == 0) {
         if (error != NULL && *error == NULL) {
             g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_PERM, "Cannot delete the workspace root.");
         }
+        return FALSE;
+    }
+
+    if (stat(workspace->path, &workspace_info) != 0) {
+        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not inspect workspace before deletion.");
+        return FALSE;
+    }
+    if (!preflight_delete_path(path, workspace_info.st_dev, error)) {
         return FALSE;
     }
 

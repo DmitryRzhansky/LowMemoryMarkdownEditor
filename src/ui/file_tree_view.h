@@ -5,18 +5,20 @@
 
 #include "workspace/workspace.h"
 
-enum {
-    LMME_TREE_COL_ICON = 0,
-    LMME_TREE_COL_NAME,
-    LMME_TREE_COL_PATH,
-    LMME_TREE_COL_KIND,
-    LMME_TREE_N_COLS
-};
+typedef struct _LmmeApp LmmeApp;
 
-GtkWidget *lmme_file_tree_create(void);
-void lmme_file_tree_populate(GtkWidget *tree_view, LmmeFileNode *root);
+GtkWidget *lmme_file_tree_create(LmmeApp *app);
+void lmme_file_tree_populate(GtkWidget *tree_view,
+                             LmmeWorkspace *workspace,
+                             gboolean show_hidden_files,
+                             gboolean show_images);
 gboolean lmme_file_tree_get_selected(GtkWidget *tree_view,
                                      char **out_path,
                                      LmmeFileKind *out_kind);
+gboolean lmme_file_tree_select_at(GtkWidget *tree_view,
+                                  double x,
+                                  double y,
+                                  char **out_path,
+                                  LmmeFileKind *out_kind);
 
 #endif

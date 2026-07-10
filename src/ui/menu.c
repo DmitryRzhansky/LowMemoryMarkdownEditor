@@ -28,7 +28,7 @@ lmme_menu_create_model(void)
     g_menu_append(edit, "Insert Link", "app.insert-link");
     g_menu_append(edit, "Insert Image", "app.insert-image");
     g_menu_append(view, "Toggle Sidebar", "app.toggle-sidebar");
-    g_menu_append(view, "Toggle Preview", "app.toggle-preview");
+    g_menu_append(view, "Toggle Editable Preview", "app.toggle-preview");
     g_menu_append(view, "Zoom In", "app.zoom-in");
     g_menu_append(view, "Zoom Out", "app.zoom-out");
     g_menu_append(view, "Reset Zoom", "app.zoom-reset");

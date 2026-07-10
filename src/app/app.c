@@ -1,6 +1,8 @@
 #include "app/app.h"
 
 #include "document/document.h"
+#include "document/document_autosave.h"
+#include "document/recovery.h"
 #include "document/tabs.h"
 #include "infra/config.h"
 #include "ui/window.h"
@@ -39,7 +41,6 @@ on_shutdown(GApplication *application, gpointer user_data)
     }
 
     app->config.preview_enabled = app->preview_enabled;
-    app->config.focus_mode = FALSE;
     if (app->main_paned != NULL) {
         app->config.sidebar_width = gtk_paned_get_position(GTK_PANED(app->main_paned));
     }
@@ -62,6 +63,8 @@ app_new(GtkApplication *gtk_app)
     app->gtk_app = gtk_app;
     app->config_path = lmme_config_default_path();
     app->documents = g_ptr_array_new();
+    app->recovery_store = lmme_recovery_store_new_default();
+    app->next_document_id = 1;
 
     if (!lmme_config_load(&app->config, app->config_path, &error) && error != NULL) {
         g_warning("Could not load config: %s", error->message);
@@ -73,6 +76,42 @@ app_new(GtkApplication *gtk_app)
     app->focus_mode = FALSE;
 
     return app;
+}
+
+gboolean
+lmme_app_request_shutdown(LmmeApp *app)
+{
+    if (app == NULL) {
+        return FALSE;
+    }
+    if (app->shutdown_in_progress) {
+        return TRUE;
+    }
+
+    app->shutdown_in_progress = TRUE;
+    app->scheduling_blocked = TRUE;
+    if (app->preview_timeout_id != 0) {
+        g_source_remove(app->preview_timeout_id);
+        app->preview_timeout_id = 0;
+    }
+    for (guint i = 0; i < app->documents->len; i++) {
+        LmmeDocument *doc = g_ptr_array_index(app->documents, i);
+        lmme_document_cancel_autosave(doc);
+        lmme_document_cancel_recovery(doc);
+        if (doc->clipboard_cancellable != NULL) {
+            g_cancellable_cancel(doc->clipboard_cancellable);
+        }
+    }
+
+    if (!lmme_tabs_prepare_close_all(app)) {
+        app->shutdown_in_progress = FALSE;
+        app->scheduling_blocked = FALSE;
+        lmme_tabs_resume_pending_saves(app);
+        return FALSE;
+    }
+
+    g_application_quit(G_APPLICATION(app->gtk_app));
+    return TRUE;
 }
 
 void
@@ -95,8 +134,9 @@ lmme_app_free(LmmeApp *app)
         g_clear_pointer(&app->documents, g_ptr_array_unref);
     }
     g_clear_pointer(&app->workspace, lmme_workspace_free);
-    g_clear_pointer(&app->selected_path, g_free);
-    g_clear_pointer(&app->tree_context_path, g_free);
+    g_clear_pointer(&app->recovery_store, lmme_recovery_store_free);
+    g_clear_pointer(&app->selection.path, g_free);
+    g_clear_pointer(&app->tree_context.path, g_free);
     g_clear_pointer(&app->config_path, g_free);
     lmme_config_clear(&app->config);
     g_free(app);
