@@ -99,72 +99,30 @@ create_tree_context_menu_model(LmmeApp *app)
         return G_MENU_MODEL(menu);
     }
     if (is_markdown) {
-        GMenu *section = g_menu_new();
-        g_menu_append(section, "Open", "app.tree-open");
+        g_menu_append(menu, "Open", "app.tree-open");
         if (tab_open) {
-            g_menu_append(section, "Close Tab", "app.tree-close-tab");
+            g_menu_append(menu, "Close Tab", "app.tree-close-tab");
         }
-        g_menu_append_section(menu, NULL, G_MENU_MODEL(section));
-        g_object_unref(section);
     }
     if (has_workspace) {
-        GMenu *section = g_menu_new();
-        g_menu_append(section, "New Markdown File", "app.tree-new-file");
-        g_menu_append(section, "New Folder", "app.tree-new-folder");
-        g_menu_append_section(menu, NULL, G_MENU_MODEL(section));
-        g_object_unref(section);
+        g_menu_append(menu, "New Markdown File", "app.tree-new-file");
+        g_menu_append(menu, "New Folder", "app.tree-new-folder");
     }
     if (is_dir || is_markdown || is_image) {
-        GMenu *section = g_menu_new();
-        g_menu_append(section, "Rename", "app.tree-rename");
+        g_menu_append(menu, "Rename", "app.tree-rename");
         if (!is_workspace_root) {
-            g_menu_append(section, "Delete", "app.tree-delete");
+            g_menu_append(menu, "Delete", "app.tree-delete");
         }
-        g_menu_append_section(menu, NULL, G_MENU_MODEL(section));
-        g_object_unref(section);
     }
     if (app->tree_context.path != NULL) {
-        GMenu *copy_section = g_menu_new();
-        GMenu *reveal_section = g_menu_new();
-        g_menu_append(copy_section, "Copy Relative Path", "app.tree-copy-relative-path");
-        g_menu_append(copy_section, "Copy Full Path", "app.tree-copy-full-path");
+        g_menu_append(menu, "Copy Relative Path", "app.tree-copy-relative-path");
+        g_menu_append(menu, "Copy Full Path", "app.tree-copy-full-path");
         if (is_image) {
-            g_menu_append(copy_section, "Copy Markdown Image Link", "app.tree-copy-markdown-image-link");
+            g_menu_append(menu, "Copy Markdown Image Link", "app.tree-copy-markdown-image-link");
         }
-        g_menu_append_section(menu, NULL, G_MENU_MODEL(copy_section));
-        g_menu_append(reveal_section, "Open Containing Folder", "app.tree-open-containing-folder");
-        g_menu_append_section(menu, NULL, G_MENU_MODEL(reveal_section));
-        g_object_unref(copy_section);
-        g_object_unref(reveal_section);
+        g_menu_append(menu, "Open Containing Folder", "app.tree-open-containing-folder");
     }
     return G_MENU_MODEL(menu);
-}
-
-static void
-prepare_popover_widget(GtkWidget *widget)
-{
-    if (widget == NULL) {
-        return;
-    }
-    if (g_strcmp0(G_OBJECT_TYPE_NAME(widget), "GtkModelButton") == 0) {
-        gtk_widget_set_hexpand(widget, TRUE);
-        gtk_widget_set_halign(widget, GTK_ALIGN_FILL);
-    }
-    for (GtkWidget *child = gtk_widget_get_first_child(widget); child != NULL; child = gtk_widget_get_next_sibling(child)) {
-        prepare_popover_widget(child);
-    }
-}
-
-static void
-configure_popover(GtkWidget *popover)
-{
-    GtkWidget *child = popover != NULL ? gtk_popover_get_child(GTK_POPOVER(popover)) : NULL;
-    if (child != NULL && GTK_IS_SCROLLED_WINDOW(child)) {
-        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(child), GTK_POLICY_NEVER, GTK_POLICY_NEVER);
-        gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(child), TRUE);
-        gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(child), TRUE);
-        prepare_popover_widget(child);
-    }
 }
 
 static GtkWidget *
@@ -175,7 +133,6 @@ get_tree_context_popover(void)
         tree_context_popover = gtk_popover_menu_new_from_model(G_MENU_MODEL(empty_menu));
         gtk_popover_set_has_arrow(GTK_POPOVER(tree_context_popover), FALSE);
         gtk_popover_set_autohide(GTK_POPOVER(tree_context_popover), TRUE);
-        configure_popover(tree_context_popover);
     }
     return tree_context_popover;
 }
@@ -204,7 +161,6 @@ on_tree_right_click(GtkGestureClick *gesture, int n_press, double x, double y, g
 
     popover = get_tree_context_popover();
     gtk_popover_menu_set_menu_model(GTK_POPOVER_MENU(popover), menu_model);
-    configure_popover(popover);
     anchor = app->root_box;
     if (gtk_widget_get_parent(popover) != anchor) {
         if (gtk_widget_get_parent(popover) != NULL) {
@@ -226,7 +182,6 @@ on_tree_right_click(GtkGestureClick *gesture, int n_press, double x, double y, g
     rect.height = 1;
     gtk_popover_set_pointing_to(GTK_POPOVER(popover), &rect);
     gtk_popover_popup(GTK_POPOVER(popover));
-    gtk_popover_present(GTK_POPOVER(popover));
 }
 
 void
