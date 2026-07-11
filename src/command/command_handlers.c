@@ -56,7 +56,6 @@ lmme_command_handler_domain(LmmeCommandHandler handler)
     case LMME_COMMAND_HANDLER_ZOOM_OUT:
     case LMME_COMMAND_HANDLER_ZOOM_RESET:
     case LMME_COMMAND_HANDLER_FOCUS_MODE:
-    case LMME_COMMAND_HANDLER_ABOUT:
         return LMME_COMMAND_DOMAIN_VIEW;
     case LMME_COMMAND_HANDLER_COUNT:
         return LMME_COMMAND_DOMAIN_NONE;

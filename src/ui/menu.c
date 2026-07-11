@@ -7,7 +7,6 @@ lmme_menu_create_model(void)
     GMenu *file = g_menu_new();
     GMenu *edit = g_menu_new();
     GMenu *view = g_menu_new();
-    GMenu *help = g_menu_new();
 
     g_menu_append(file, "Open Folder", "app.open");
     g_menu_append(file, "New File", "app.new-file");
@@ -33,15 +32,12 @@ lmme_menu_create_model(void)
     g_menu_append(view, "Zoom Out", "app.zoom-out");
     g_menu_append(view, "Reset Zoom", "app.zoom-reset");
     g_menu_append(view, "Focus Mode", "app.focus-mode");
-    g_menu_append(help, "About", "app.about");
 
     g_menu_append_submenu(bar, "File", G_MENU_MODEL(file));
     g_menu_append_submenu(bar, "Edit", G_MENU_MODEL(edit));
     g_menu_append_submenu(bar, "View", G_MENU_MODEL(view));
-    g_menu_append_submenu(bar, "Help", G_MENU_MODEL(help));
     g_object_unref(file);
     g_object_unref(edit);
     g_object_unref(view);
-    g_object_unref(help);
     return G_MENU_MODEL(bar);
 }

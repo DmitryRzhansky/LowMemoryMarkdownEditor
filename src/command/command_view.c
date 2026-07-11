@@ -4,7 +4,6 @@
 
 #include "app/app.h"
 #include "editor/editor.h"
-#include "infra/dialogs.h"
 #include "ui/window.h"
 
 static int
@@ -68,11 +67,6 @@ lmme_command_handle_view(LmmeCommandHandler handler,
         return TRUE;
     case LMME_COMMAND_HANDLER_FOCUS_MODE:
         action_focus_mode(app);
-        return TRUE;
-    case LMME_COMMAND_HANDLER_ABOUT:
-        lmme_dialog_info(GTK_WINDOW(app->window),
-                         "LowMemoryMarkdownEditor",
-                         "Small Linux-only GTK Markdown editor for local folders.");
         return TRUE;
     default:
         return FALSE;

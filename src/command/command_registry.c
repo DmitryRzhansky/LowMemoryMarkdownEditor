@@ -50,7 +50,6 @@ static const LmmeCommandDef command_defs[] = {
     COMMAND("editor.italic", "italic", "Italic", LMME_COMMAND_CATEGORY_EDIT, "<Ctrl>I", LMME_COMMAND_HANDLER_ITALIC),
     COMMAND("editor.insert_link", "insert-link", "Insert Link", LMME_COMMAND_CATEGORY_EDIT, "<Ctrl>K", LMME_COMMAND_HANDLER_INSERT_LINK),
     COMMAND_NO_ACCEL("editor.insert_image", "insert-image", "Insert Image", LMME_COMMAND_CATEGORY_EDIT, LMME_COMMAND_HANDLER_INSERT_IMAGE),
-    COMMAND_NO_ACCEL("help.about", "about", "About", LMME_COMMAND_CATEGORY_HELP, LMME_COMMAND_HANDLER_ABOUT),
     COMMAND_NO_ACCEL("tree.open", "tree-open", "Open", LMME_COMMAND_CATEGORY_WORKSPACE, LMME_COMMAND_HANDLER_TREE_OPEN),
     COMMAND_NO_ACCEL("tree.close_tab", "tree-close-tab", "Close Tab", LMME_COMMAND_CATEGORY_WORKSPACE, LMME_COMMAND_HANDLER_TREE_CLOSE_TAB),
     COMMAND_NO_ACCEL("tree.new_file", "tree-new-file", "New Markdown File", LMME_COMMAND_CATEGORY_WORKSPACE, LMME_COMMAND_HANDLER_TREE_NEW_FILE),
