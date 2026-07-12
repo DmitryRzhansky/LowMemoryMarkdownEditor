@@ -6,6 +6,7 @@
 #include "infra/file_fingerprint.h"
 
 typedef struct _LmmeRecoveryStore LmmeRecoveryStore;
+typedef struct _LmmeRecoveryStage LmmeRecoveryStage;
 
 typedef struct {
     char *original_path;
@@ -32,6 +33,15 @@ gboolean lmme_recovery_write(LmmeRecoveryStore *store,
                              const char *contents,
                              gsize length,
                              GError **error);
+LmmeRecoveryStage *lmme_recovery_stage_new(LmmeRecoveryStore *store,
+                                           const char *original_path,
+                                           const char *workspace_path,
+                                           const LmmeFileFingerprint *original_fingerprint,
+                                           const char *contents,
+                                           gsize length,
+                                           GError **error);
+gboolean lmme_recovery_stage_commit(LmmeRecoveryStage *stage, GError **error);
+void lmme_recovery_stage_free(LmmeRecoveryStage *stage);
 gboolean lmme_recovery_remove(LmmeRecoveryStore *store,
                               const char *original_path,
                               GError **error);
