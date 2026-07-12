@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "document/file_io.h"
+#include "features/image_insert.h"
 #include "workspace/workspace.h"
 
 typedef void (*BenchmarkOperation)(gpointer user_data);
@@ -32,6 +33,21 @@ peak_rss_kib(void)
 }
 
 static void
+sort_elapsed(gint64 *elapsed, guint samples)
+{
+    for (guint i = 1; i < samples; i++) {
+        gint64 value = elapsed[i];
+        guint position = i;
+
+        while (position > 0 && elapsed[position - 1] > value) {
+            elapsed[position] = elapsed[position - 1];
+            position--;
+        }
+        elapsed[position] = value;
+    }
+}
+
+static void
 run_samples(const char *name,
             guint samples,
             BenchmarkOperation operation,
@@ -45,16 +61,7 @@ run_samples(const char *name,
         operation(user_data);
         elapsed[i] = g_get_monotonic_time() - started;
     }
-    for (guint i = 1; i < samples; i++) {
-        gint64 value = elapsed[i];
-        guint position = i;
-
-        while (position > 0 && elapsed[position - 1] > value) {
-            elapsed[position] = elapsed[position - 1];
-            position--;
-        }
-        elapsed[position] = value;
-    }
+    sort_elapsed(elapsed, samples);
     p95_index = ((samples * 95U + 99U) / 100U) - 1U;
     g_print("%s: median %.3f ms, p95 %.3f ms, peak RSS %" G_GUINT64_FORMAT " KiB\n",
             name,
@@ -122,11 +129,28 @@ typedef struct {
     const char *path;
 } PngContext;
 
+typedef struct {
+    GMainLoop *loop;
+    gboolean saved;
+    GError *error;
+} AsyncPngContext;
+
 static void
 png_operation(gpointer user_data)
 {
     PngContext *context = user_data;
     g_assert_true(gdk_texture_save_to_png(context->texture, context->path));
+}
+
+static void
+on_async_png_saved(GObject *source_object, GAsyncResult *result, gpointer user_data)
+{
+    AsyncPngContext *context = user_data;
+
+    context->saved = lmme_image_texture_save_png_finish(GDK_TEXTURE(source_object),
+                                                        result,
+                                                        &context->error);
+    g_main_loop_quit(context->loop);
 }
 
 static void
@@ -212,8 +236,35 @@ benchmark_png_encoding(const char *root)
         g_autofree char *path = g_strdup_printf("%s/texture-%u.png", root, width);
         g_autofree char *name = g_strdup_printf("PNG encode %" G_GSIZE_FORMAT " raw bytes", bytes_count);
         PngContext context = {.texture = texture, .path = path};
+        gint64 schedule_elapsed[3] = {0};
+        gint64 total_elapsed[3] = {0};
 
         run_samples(name, 3, png_operation, &context);
+        for (guint sample = 0; sample < G_N_ELEMENTS(schedule_elapsed); sample++) {
+            g_autoptr(GMainLoop) loop = g_main_loop_new(NULL, FALSE);
+            AsyncPngContext async_context = {.loop = loop};
+            gint64 started = 0;
+
+            g_unlink(path);
+            started = g_get_monotonic_time();
+            lmme_image_texture_save_png_async(texture,
+                                              path,
+                                              NULL,
+                                              on_async_png_saved,
+                                              &async_context);
+            schedule_elapsed[sample] = g_get_monotonic_time() - started;
+            g_main_loop_run(loop);
+            total_elapsed[sample] = g_get_monotonic_time() - started;
+            g_assert_no_error(async_context.error);
+            g_assert_true(async_context.saved);
+            g_clear_error(&async_context.error);
+        }
+        sort_elapsed(schedule_elapsed, G_N_ELEMENTS(schedule_elapsed));
+        sort_elapsed(total_elapsed, G_N_ELEMENTS(total_elapsed));
+        g_print("PNG async %" G_GSIZE_FORMAT " raw bytes: schedule %.3f ms, total %.3f ms\n",
+                bytes_count,
+                (double)schedule_elapsed[1] / 1000.0,
+                (double)total_elapsed[1] / 1000.0);
         g_unlink(path);
     }
 }

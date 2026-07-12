@@ -18,9 +18,11 @@ endif
 
 gtk_dep = dependency('gtk4')
 gtksource_dep = dependency('gtksourceview-5')
+gdk_pixbuf_dep = dependency('gdk-pixbuf-2.0')
 deps = [
   gtk_dep,
   gtksource_dep,
+  gdk_pixbuf_dep,
 ]
 
 common_args = [

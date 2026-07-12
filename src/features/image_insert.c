@@ -20,7 +20,90 @@ typedef struct {
     LmmeApp *app;
     guint64 document_id;
     GCancellable *cancellable;
+    char *destination_path;
 } LmmeImageInsertRequest;
+
+typedef struct {
+    char *destination_path;
+    guint8 *pixels;
+    gsize byte_count;
+    gsize stride;
+    int width;
+    int height;
+} LmmePngSave;
+
+static guint8
+unpremultiply_channel(guint8 channel, guint8 alpha)
+{
+    if (alpha == 0) {
+        return 0;
+    }
+    if (alpha == 255) {
+        return channel;
+    }
+    return (guint8)MIN(255U,
+                       ((guint)channel * 255U + (guint)alpha / 2U) / (guint)alpha);
+}
+
+static guint8 *
+texture_download_argb(GdkTexture *texture,
+                      gsize *out_byte_count,
+                      gsize *out_stride)
+{
+    int width = gdk_texture_get_width(texture);
+    int height = gdk_texture_get_height(texture);
+    gsize stride = 0;
+    gsize byte_count = 0;
+    guint8 *pixels = NULL;
+
+    if (width <= 0 || height <= 0 || (gsize)width > G_MAXSIZE / 4U) {
+        return NULL;
+    }
+    stride = (gsize)width * 4U;
+    if ((gsize)height > G_MAXSIZE / stride) {
+        return NULL;
+    }
+    byte_count = stride * (gsize)height;
+    pixels = g_malloc(byte_count);
+
+    gdk_texture_download(texture, pixels, stride);
+    *out_byte_count = byte_count;
+    *out_stride = stride;
+    return pixels;
+}
+
+static void
+convert_argb_to_rgba(guint8 *pixels, gsize byte_count)
+{
+    for (gsize offset = 0; offset < byte_count; offset += 4U) {
+#if G_BYTE_ORDER == G_LITTLE_ENDIAN
+        guint8 blue = pixels[offset];
+        guint8 green = pixels[offset + 1U];
+        guint8 red = pixels[offset + 2U];
+        guint8 alpha = pixels[offset + 3U];
+#else
+        guint8 alpha = pixels[offset];
+        guint8 red = pixels[offset + 1U];
+        guint8 green = pixels[offset + 2U];
+        guint8 blue = pixels[offset + 3U];
+#endif
+
+        if (alpha == 0) {
+            pixels[offset] = 0;
+            pixels[offset + 1U] = 0;
+            pixels[offset + 2U] = 0;
+        } else if (alpha == 255) {
+            pixels[offset] = red;
+            pixels[offset + 1U] = green;
+            pixels[offset + 2U] = blue;
+        } else {
+            pixels[offset] = unpremultiply_channel(red, alpha);
+            pixels[offset + 1U] = unpremultiply_channel(green, alpha);
+            pixels[offset + 2U] = unpremultiply_channel(blue, alpha);
+        }
+        pixels[offset + 3U] = alpha;
+    }
+}
 
 static void
 image_insert_request_free(LmmeImageInsertRequest *request)
@@ -29,7 +112,146 @@ image_insert_request_free(LmmeImageInsertRequest *request)
         return;
     }
     g_clear_object(&request->cancellable);
+    g_free(request->destination_path);
     g_free(request);
+}
+
+static void
+png_save_free(LmmePngSave *save)
+{
+    if (save == NULL) {
+        return;
+    }
+    g_free(save->destination_path);
+    g_free(save->pixels);
+    g_free(save);
+}
+
+static void
+png_save_thread(GTask *task,
+                gpointer source_object,
+                gpointer task_data,
+                GCancellable *cancellable)
+{
+    LmmePngSave *save = task_data;
+    g_autoptr(GdkPixbuf) pixbuf = NULL;
+    g_autoptr(GFile) destination = NULL;
+    g_autoptr(GFileOutputStream) stream = NULL;
+    g_autoptr(GError) error = NULL;
+    g_autoptr(GError) close_error = NULL;
+    gboolean created = FALSE;
+    gboolean saved = FALSE;
+
+    (void)source_object;
+    if (g_task_return_error_if_cancelled(task)) {
+        return;
+    }
+
+    convert_argb_to_rgba(save->pixels, save->byte_count);
+    pixbuf = gdk_pixbuf_new_from_data(save->pixels,
+                                     GDK_COLORSPACE_RGB,
+                                     TRUE,
+                                     8,
+                                     save->width,
+                                     save->height,
+                                     (int)save->stride,
+                                     NULL,
+                                     NULL);
+    if (pixbuf == NULL) {
+        g_task_return_new_error(task,
+                                G_IO_ERROR,
+                                G_IO_ERROR_FAILED,
+                                "Could not prepare clipboard image pixels.");
+        return;
+    }
+
+    destination = g_file_new_for_path(save->destination_path);
+    stream = g_file_create(destination,
+                           G_FILE_CREATE_NONE,
+                           cancellable,
+                           &error);
+    if (stream == NULL) {
+        g_task_return_error(task, g_steal_pointer(&error));
+        return;
+    }
+    created = TRUE;
+    saved = gdk_pixbuf_save_to_streamv(pixbuf,
+                                       G_OUTPUT_STREAM(stream),
+                                       "png",
+                                       NULL,
+                                       NULL,
+                                       cancellable,
+                                       &error);
+    if (!g_output_stream_close(G_OUTPUT_STREAM(stream), NULL, &close_error)) {
+        saved = FALSE;
+        if (error == NULL) {
+            error = g_steal_pointer(&close_error);
+        }
+    }
+    if (saved && g_cancellable_is_cancelled(cancellable)) {
+        saved = FALSE;
+        g_clear_error(&error);
+        g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_CANCELLED, "Operation was cancelled");
+    }
+    if (!saved) {
+        if (created) {
+            (void)g_file_delete(destination, NULL, NULL);
+        }
+        if (error == NULL) {
+            g_set_error_literal(&error,
+                                G_IO_ERROR,
+                                G_IO_ERROR_FAILED,
+                                "Could not encode clipboard image.");
+        }
+        g_task_return_error(task, g_steal_pointer(&error));
+        return;
+    }
+    g_task_return_boolean(task, TRUE);
+}
+
+void
+lmme_image_texture_save_png_async(GdkTexture *texture,
+                                  const char *destination_path,
+                                  GCancellable *cancellable,
+                                  GAsyncReadyCallback callback,
+                                  gpointer user_data)
+{
+    GTask *task = NULL;
+    LmmePngSave *save = NULL;
+
+    g_return_if_fail(GDK_IS_TEXTURE(texture));
+    g_return_if_fail(destination_path != NULL);
+
+    task = g_task_new(texture, cancellable, callback, user_data);
+    g_task_set_check_cancellable(task, FALSE);
+    save = g_new0(LmmePngSave, 1);
+    save->destination_path = g_strdup(destination_path);
+    save->width = gdk_texture_get_width(texture);
+    save->height = gdk_texture_get_height(texture);
+    g_task_set_task_data(task, save, (GDestroyNotify)png_save_free);
+
+    save->pixels = texture_download_argb(texture,
+                                         &save->byte_count,
+                                         &save->stride);
+    if (save->pixels == NULL || save->stride > G_MAXINT) {
+        g_task_return_new_error(task,
+                                G_IO_ERROR,
+                                G_IO_ERROR_FAILED,
+                                "Could not read clipboard image pixels.");
+        g_object_unref(task);
+        return;
+    }
+    g_task_run_in_thread(task, png_save_thread);
+    g_object_unref(task);
+}
+
+gboolean
+lmme_image_texture_save_png_finish(GdkTexture *texture,
+                                   GAsyncResult *result,
+                                   GError **error)
+{
+    g_return_val_if_fail(g_task_is_valid(result, texture), FALSE);
+    return g_task_propagate_boolean(G_TASK(result), error);
 }
 
 static const char *
@@ -166,13 +388,42 @@ lmme_image_insert_from_dialog(LmmeApp *app)
     }
 }
 
+static void
+on_texture_saved(GObject *source_object, GAsyncResult *result, gpointer user_data)
+{
+    LmmeImageInsertRequest *request = user_data;
+    LmmeDocument *doc = lmme_tabs_find_by_id(request->app, request->document_id);
+    g_autoptr(GError) error = NULL;
+    gboolean saved = lmme_image_texture_save_png_finish(GDK_TEXTURE(source_object),
+                                                        result,
+                                                        &error);
+    gboolean is_current = doc != NULL && doc->clipboard_cancellable == request->cancellable;
+
+    if (saved && is_current && !g_cancellable_is_cancelled(request->cancellable)) {
+        if (!insert_link_for_dest(doc, request->destination_path)) {
+            g_unlink(request->destination_path);
+        }
+    } else if (saved) {
+        g_unlink(request->destination_path);
+    } else if (error == NULL || !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        lmme_dialog_error(GTK_WINDOW(request->app->window),
+                          "Could not save image.",
+                          error != NULL ? error->message : NULL);
+    }
+    if (is_current) {
+        g_clear_object(&doc->clipboard_cancellable);
+    }
+    image_insert_request_free(request);
+}
+
 static gboolean
-save_texture_to_img(LmmeDocument *doc, GdkTexture *texture)
+save_texture_to_img_async(LmmeDocument *doc,
+                          GdkTexture *texture,
+                          LmmeImageInsertRequest *request)
 {
     LmmeApp *app = doc->app;
     g_autofree char *img_dir = NULL;
     g_autofree char *filename = NULL;
-    g_autofree char *dest_path = NULL;
     g_autoptr(GDateTime) now = NULL;
     g_autoptr(GError) error = NULL;
 
@@ -190,17 +441,12 @@ save_texture_to_img(LmmeDocument *doc, GdkTexture *texture)
 
     now = g_date_time_new_now_local();
     filename = lmme_generate_image_filename(img_dir, doc->path, "png", now);
-    dest_path = g_build_filename(img_dir, filename, NULL);
-
-    if (!gdk_texture_save_to_png(texture, dest_path)) {
-        lmme_dialog_error(GTK_WINDOW(app->window), "Could not save image.", NULL);
-        return FALSE;
-    }
-
-    if (!insert_link_for_dest(doc, dest_path)) {
-        g_unlink(dest_path);
-        return FALSE;
-    }
+    request->destination_path = g_build_filename(img_dir, filename, NULL);
+    lmme_image_texture_save_png_async(texture,
+                                      request->destination_path,
+                                      request->cancellable,
+                                      on_texture_saved,
+                                      request);
     return TRUE;
 }
 
@@ -223,8 +469,11 @@ on_clipboard_texture_ready(GObject *source_object, GAsyncResult *result, gpointe
 
     if (doc != NULL && doc->clipboard_cancellable == request->cancellable &&
         !g_cancellable_is_cancelled(request->cancellable)) {
-        g_clear_object(&doc->clipboard_cancellable);
-        save_texture_to_img(doc, texture);
+        if (save_texture_to_img_async(doc, texture, request)) {
+            request = NULL;
+        } else {
+            g_clear_object(&doc->clipboard_cancellable);
+        }
     }
     g_object_unref(texture);
     image_insert_request_free(request);
