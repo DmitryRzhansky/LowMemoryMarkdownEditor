@@ -57,6 +57,16 @@ tree_refresh_benchmark = executable(
 )
 benchmark('tree_refresh', tree_refresh_benchmark)
 
+main_loop_benchmark = executable(
+  'benchmark_main_loop',
+  'benchmark_main_loop.c',
+  link_with: lmme_lib,
+  dependencies: deps,
+  include_directories: include_directories('../src'),
+  c_args: common_args,
+)
+benchmark('main_loop_operations', main_loop_benchmark, timeout: 180)
+
 safe_write_benchmark = executable(
   'benchmark_safe_write',
   'benchmark_safe_write.c',
