@@ -1,6 +1,7 @@
 #include <glib.h>
 #include <string.h>
 
+#include "editor/preview.h"
 #include "editor/preview_style.h"
 
 static guint
@@ -168,6 +169,27 @@ test_ranges_are_sorted_and_bounded(void)
     }
 }
 
+static void
+test_range_lower_bound(void)
+{
+    g_autoptr(GPtrArray) ranges = g_ptr_array_new_with_free_func(g_free);
+    const guint offsets[] = {2, 2, 8, 15, 21};
+
+    for (guint i = 0; i < G_N_ELEMENTS(offsets); i++) {
+        LmmePreviewRange *range = g_new0(LmmePreviewRange, 1);
+        range->start_offset = offsets[i];
+        range->end_offset = offsets[i] + 1;
+        g_ptr_array_add(ranges, range);
+    }
+
+    g_assert_cmpuint(lmme_preview_range_lower_bound(ranges, 0), ==, 0);
+    g_assert_cmpuint(lmme_preview_range_lower_bound(ranges, 2), ==, 0);
+    g_assert_cmpuint(lmme_preview_range_lower_bound(ranges, 3), ==, 2);
+    g_assert_cmpuint(lmme_preview_range_lower_bound(ranges, 15), ==, 3);
+    g_assert_cmpuint(lmme_preview_range_lower_bound(ranges, 22), ==, 5);
+    g_assert_cmpuint(lmme_preview_range_lower_bound(NULL, 10), ==, 0);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -182,5 +204,6 @@ main(int argc, char **argv)
     g_test_add_func("/preview-style/lists-tasks", test_lists_and_tasks);
     g_test_add_func("/preview-style/cyrillic-offsets", test_cyrillic_offsets);
     g_test_add_func("/preview-style/sorted-bounded", test_ranges_are_sorted_and_bounded);
+    g_test_add_func("/preview-style/lower-bound", test_range_lower_bound);
     return g_test_run();
 }

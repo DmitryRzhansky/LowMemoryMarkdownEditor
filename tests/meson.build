@@ -37,6 +37,16 @@ preview_benchmark = executable(
 )
 benchmark('preview_style', preview_benchmark)
 
+preview_active_line_benchmark = executable(
+  'benchmark_preview_active_line',
+  'benchmark_preview_active_line.c',
+  link_with: lmme_lib,
+  dependencies: deps,
+  include_directories: include_directories('../src'),
+  c_args: common_args,
+)
+benchmark('preview_active_line', preview_active_line_benchmark)
+
 safe_write_benchmark = executable(
   'benchmark_safe_write',
   'benchmark_safe_write.c',

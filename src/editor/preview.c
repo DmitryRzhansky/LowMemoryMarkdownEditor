@@ -279,13 +279,17 @@ apply_cached_marker_style_to_line(GtkTextBuffer *buffer, guint line, gboolean ac
         gtk_text_buffer_remove_tag(buffer, active_marker, &line_start, &line_end);
     }
 
-    for (guint i = 0; i < ranges->len; i++) {
+    for (guint i = lmme_preview_range_lower_bound(ranges, line_start_offset);
+         i < ranges->len;
+         i++) {
         const LmmePreviewRange *range = g_ptr_array_index(ranges, i);
         GtkTextIter start;
         GtkTextIter end;
 
-        if (range->start_offset < line_start_offset || range->end_offset > line_end_offset ||
-            range->end_offset > (guint)G_MAXINT) {
+        if (range->start_offset >= line_end_offset) {
+            break;
+        }
+        if (range->end_offset > line_end_offset || range->end_offset > (guint)G_MAXINT) {
             continue;
         }
         gtk_text_buffer_get_iter_at_offset(buffer, &start, (int)range->start_offset);
@@ -301,6 +305,27 @@ apply_cached_marker_style_to_line(GtkTextBuffer *buffer, guint line, gboolean ac
             gtk_text_buffer_apply_tag(buffer, hidden, &start, &end);
         }
     }
+}
+
+guint
+lmme_preview_range_lower_bound(GPtrArray *ranges, guint start_offset)
+{
+    guint first = 0;
+    guint count = ranges != NULL ? ranges->len : 0;
+
+    while (count > 0) {
+        guint step = count / 2;
+        guint index = first + step;
+        const LmmePreviewRange *range = g_ptr_array_index(ranges, index);
+
+        if (range->start_offset < start_offset) {
+            first = index + 1;
+            count -= step + 1;
+        } else {
+            count = step;
+        }
+    }
+    return first;
 }
 
 void
