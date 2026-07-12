@@ -9,6 +9,7 @@ test_sources = {
   'test_image_insert_target': 'test_image_insert_target.c',
   'test_search_flow': 'test_search_flow.c',
   'test_file_fingerprint': 'test_file_fingerprint.c',
+  'test_file_io': 'test_file_io.c',
   'test_document_lifecycle': 'test_document_lifecycle.c',
   'test_document_paths': 'test_document_paths.c',
 }

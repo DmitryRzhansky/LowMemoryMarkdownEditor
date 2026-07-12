@@ -3,6 +3,7 @@
 
 #include "app/app.h"
 #include "document/document_autosave.h"
+#include "document/file_io.h"
 #include "document/file_monitor.h"
 #include "document/recovery.h"
 #include "infra/dialogs.h"
@@ -141,19 +142,7 @@ lmme_tabs_get_active(LmmeApp *app)
 static gboolean
 open_file_contents(const char *path, char **contents, GError **error)
 {
-    gsize length = 0;
-
-    if (!g_file_get_contents(path, contents, &length, error)) {
-        return FALSE;
-    }
-
-    if (!g_utf8_validate(*contents, (gssize)length, NULL)) {
-        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "This file is not valid UTF-8.");
-        g_clear_pointer(contents, g_free);
-        return FALSE;
-    }
-
-    return TRUE;
+    return lmme_file_read_utf8(path, G_MAXINT, contents, NULL, error);
 }
 
 static void

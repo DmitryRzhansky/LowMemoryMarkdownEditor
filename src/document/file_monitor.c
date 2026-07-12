@@ -3,6 +3,7 @@
 #include "app/app.h"
 #include "document/document.h"
 #include "document/document_autosave.h"
+#include "document/file_io.h"
 #include "infra/file_fingerprint.h"
 #include "document/recovery.h"
 #include "infra/dialogs.h"
@@ -114,16 +115,12 @@ reload_document_from_disk(LmmeDocument *doc,
     g_autofree char *contents = NULL;
     gsize length = 0;
 
-    if (!g_file_get_contents(doc->path, &contents, &length, error)) {
-        return FALSE;
-    }
-    if (!g_utf8_validate(contents, (gssize)length, NULL)) {
-        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "This file is not valid UTF-8.");
+    if (!lmme_file_read_utf8(doc->path, G_MAXINT, &contents, &length, error)) {
         return FALSE;
     }
 
     g_signal_handler_block(doc->buffer, doc->changed_handler_id);
-    gtk_text_buffer_set_text(GTK_TEXT_BUFFER(doc->buffer), contents, (int)length);
+    gtk_text_buffer_set_text(GTK_TEXT_BUFFER(doc->buffer), contents, (gint)length);
     gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc->buffer), FALSE);
     g_signal_handler_unblock(doc->buffer, doc->changed_handler_id);
     lmme_document_cancel_autosave(doc);
