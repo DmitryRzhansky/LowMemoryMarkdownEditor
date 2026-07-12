@@ -9,5 +9,6 @@ typedef gboolean (*LmmeTabsTestPrepareFunc)(LmmeDocument *doc, gpointer user_dat
 gboolean lmme_tabs_test_prepare_documents(GPtrArray *documents,
                                            LmmeTabsTestPrepareFunc prepare,
                                            gpointer user_data);
+void lmme_tabs_test_commit_close_disposition(LmmeDocument *doc);
 
 #endif

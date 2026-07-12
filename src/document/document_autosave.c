@@ -1,34 +1,34 @@
 #include "document/document_autosave.h"
+#include "document/document_autosave_test.h"
 
 #include "app/app.h"
 #include "document/document.h"
-#include "document/recovery.h"
-#include "editor/editor.h"
 #include "ui/window.h"
-#include "workspace/workspace.h"
-
-#include <string.h>
 
 static gboolean
 recovery_timeout_cb(gpointer user_data)
 {
     LmmeDocument *doc = user_data;
-    g_autofree char *text = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
     g_autoptr(GError) error = NULL;
-    const char *workspace_path = doc->app->workspace != NULL ? doc->app->workspace->path : NULL;
 
     doc->recovery_id = 0;
-    if (!lmme_recovery_write(doc->app->recovery_store,
-                             doc->path,
-                             workspace_path,
-                             &doc->base_fingerprint,
-                             text,
-                             strlen(text),
-                             &error)) {
+    if (!lmme_document_flush_recovery(doc, &error)) {
         g_warning("Could not write recovery file: %s", error != NULL ? error->message : "unknown error");
+        lmme_window_set_status_error(doc->app, "Could not write recovery data.");
     }
 
     return G_SOURCE_REMOVE;
+}
+
+gboolean
+lmme_document_test_run_recovery_timeout(LmmeDocument *doc)
+{
+    if (doc == NULL) {
+        return FALSE;
+    }
+    lmme_document_cancel_recovery(doc);
+    (void)recovery_timeout_cb(doc);
+    return !doc->recovery_failed && doc->recovery_id == 0;
 }
 
 static gboolean

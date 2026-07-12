@@ -6,6 +6,30 @@
 #include "editor/editor.h"
 #include "workspace/workspace.h"
 
+char *
+lmme_statusbar_format_document(const LmmeDocument *doc,
+                               int line,
+                               int column,
+                               guint words,
+                               gboolean preview_enabled)
+{
+    const char *recovery_status = doc != NULL && doc->recovery_failed
+                                      ? " | Recovery failed"
+                                      : "";
+
+    if (doc == NULL) {
+        return g_strdup("No file opened");
+    }
+    return g_strdup_printf("%s | Ln %d, Col %d | %u words | %s%s | %s",
+                           doc->relative_path,
+                           line,
+                           column,
+                           words,
+                           lmme_document_save_state_label(doc),
+                           recovery_status,
+                           preview_enabled ? "Editable Preview" : "Source");
+}
+
 void
 lmme_statusbar_update(LmmeApp *app)
 {
@@ -28,13 +52,11 @@ lmme_statusbar_update(LmmeApp *app)
     int column = 1;
     lmme_editor_get_cursor(GTK_TEXT_BUFFER(doc->buffer), &line, &column);
     guint words = lmme_document_cached_word_count(doc);
-    g_autofree char *status = g_strdup_printf("%s | Ln %d, Col %d | %u words | %s | %s",
-                                              doc->relative_path,
-                                              line,
-                                              column,
-                                              words,
-                                              lmme_document_save_state_label(doc),
-                                              app->preview_enabled ? "Editable Preview" : "Source");
+    g_autofree char *status = lmme_statusbar_format_document(doc,
+                                                             line,
+                                                             column,
+                                                             words,
+                                                             app->preview_enabled);
     gtk_label_set_text(GTK_LABEL(app->status_label), status);
 }
 

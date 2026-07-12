@@ -261,24 +261,56 @@ lmme_document_update_preview_active_line(LmmeDocument *doc)
 }
 
 gboolean
+lmme_document_write_recovery_snapshot(LmmeDocument *doc,
+                                      const char *snapshot,
+                                      gsize length,
+                                      guint64 revision,
+                                      GError **error)
+{
+    const char *workspace_path = NULL;
+    gboolean durable = FALSE;
+
+    if (doc == NULL || snapshot == NULL) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid recovery snapshot.");
+        return FALSE;
+    }
+    workspace_path = doc->app->workspace != NULL ? doc->app->workspace->path : NULL;
+    durable = lmme_recovery_write(doc->app->recovery_store,
+                                  doc->path,
+                                  workspace_path,
+                                  &doc->base_fingerprint,
+                                  snapshot,
+                                  length,
+                                  error);
+    if (durable && revision != doc->content_revision) {
+        durable = FALSE;
+        g_set_error_literal(error,
+                            G_FILE_ERROR,
+                            G_FILE_ERROR_AGAIN,
+                            "The buffer changed while recovery data was being written.");
+    }
+    doc->recovery_failed = !durable;
+    lmme_window_update_status(doc->app);
+    return durable;
+}
+
+gboolean
 lmme_document_flush_recovery(LmmeDocument *doc, GError **error)
 {
     g_autofree char *text = NULL;
-    const char *workspace_path = NULL;
+    guint64 revision = 0;
 
     if (doc == NULL || (!doc->modified && !doc->restored_from_recovery &&
                         doc->disk_state == LMME_DISK_STATE_NORMAL)) {
         return TRUE;
     }
+    revision = doc->content_revision;
     text = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
-    workspace_path = doc->app->workspace != NULL ? doc->app->workspace->path : NULL;
-    return lmme_recovery_write(doc->app->recovery_store,
-                               doc->path,
-                               workspace_path,
-                               &doc->base_fingerprint,
-                               text,
-                               strlen(text),
-                               error);
+    return lmme_document_write_recovery_snapshot(doc,
+                                                 text,
+                                                 strlen(text),
+                                                 revision,
+                                                 error);
 }
 
 void
@@ -352,6 +384,7 @@ on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data)
     LmmeDocument *doc = user_data;
     (void)buffer;
 
+    doc->content_revision++;
     schedule_stats_update(doc);
     doc->preview_dirty = TRUE;
     lmme_document_set_save_state(doc, LMME_SAVE_STATE_MODIFIED);

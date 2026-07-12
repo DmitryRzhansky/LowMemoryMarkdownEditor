@@ -6,7 +6,8 @@
 typedef enum {
     LMME_SAVE_FAILURE_CANCEL = 0,
     LMME_SAVE_FAILURE_RETRY,
-    LMME_SAVE_FAILURE_KEEP_RECOVERY
+    LMME_SAVE_FAILURE_KEEP_RECOVERY,
+    LMME_SAVE_FAILURE_DISCARD_LOCAL
 } LmmeSaveFailureChoice;
 
 typedef enum {
@@ -41,12 +42,14 @@ LmmeSaveFailureChoice lmme_dialog_resolve_save_failure(GtkWindow *parent,
                                                        const char *filename,
                                                        const char *detail,
                                                        gboolean allow_retry,
-                                                       gboolean allow_keep_recovery);
+                                                       gboolean allow_keep_recovery,
+                                                       gboolean allow_discard_local);
 LmmeRecoveryChoice lmme_dialog_choose_recovery(GtkWindow *parent,
                                                const char *original_path,
                                                gboolean original_changed);
 LmmeExternalConflictChoice lmme_dialog_external_conflict(GtkWindow *parent,
                                                          const char *path,
-                                                         gboolean file_exists);
+                                                         gboolean file_exists,
+                                                         gboolean allow_reload);
 
 #endif

@@ -1,14 +1,18 @@
 #include <glib.h>
 #include <glib/gstdio.h>
 #include <gtksourceview/gtksource.h>
+#include <string.h>
 
 #include "app/app.h"
 #include "document/document.h"
 #include "document/document_autosave.h"
+#include "document/document_autosave_test.h"
+#include "document/file_monitor.h"
 #include "document/recovery.h"
 #include "document/tabs_test.h"
 #include "editor/preview.h"
 #include "infra/safe_write_test.h"
+#include "ui/statusbar.h"
 #include "workspace/workspace.h"
 
 static void
@@ -88,9 +92,9 @@ static gboolean
 prepare_close_for_test(LmmeDocument *doc, gpointer user_data)
 {
     PrepareCloseState *state = user_data;
-    (void)doc;
 
     state->calls++;
+    doc->pending_close = LMME_PENDING_CLOSE_DISCARD_LOCAL;
     return state->calls != state->cancel_on_call;
 }
 
@@ -112,6 +116,9 @@ test_bulk_close_prepare_is_all_or_nothing(void)
                                                     &state));
     g_assert_cmpuint(state.calls, ==, 2);
     g_assert_cmpuint(documents->len, ==, 3);
+    g_assert_cmpint(first.pending_close, ==, LMME_PENDING_CLOSE_NONE);
+    g_assert_cmpint(second.pending_close, ==, LMME_PENDING_CLOSE_NONE);
+    g_assert_cmpint(third.pending_close, ==, LMME_PENDING_CLOSE_NONE);
 
     state = (PrepareCloseState){0};
     g_assert_true(lmme_tabs_test_prepare_documents(documents,
@@ -119,6 +126,190 @@ test_bulk_close_prepare_is_all_or_nothing(void)
                                                    &state));
     g_assert_cmpuint(state.calls, ==, 3);
     g_assert_cmpuint(documents->len, ==, 3);
+    g_assert_cmpint(first.pending_close, ==, LMME_PENDING_CLOSE_DISCARD_LOCAL);
+    g_assert_cmpint(second.pending_close, ==, LMME_PENDING_CLOSE_DISCARD_LOCAL);
+    g_assert_cmpint(third.pending_close, ==, LMME_PENDING_CLOSE_DISCARD_LOCAL);
+}
+
+static void
+test_recovery_failure_state_and_retry(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-document-recovery-state-XXXXXX", NULL);
+    g_autofree char *cache = g_build_filename(root, "recovery", NULL);
+    g_autofree char *original = g_build_filename(root, "note.md", NULL);
+    LmmeApp app = {0};
+    LmmeDocument *doc = NULL;
+
+    g_assert_true(g_file_set_contents(original, "disk", -1, NULL));
+    app.workspace = lmme_workspace_new(root);
+    app.recovery_store = lmme_recovery_store_new(cache);
+    app.config.autosave = FALSE;
+    doc = test_document_new(&app, original, "latest local text");
+
+    lmme_document_schedule_recovery(doc);
+    g_assert_cmpuint(doc->recovery_id, !=, 0);
+    lmme_safe_write_test_fail_at(LMME_SAFE_WRITE_TEST_FAIL_TEMP_CREATE, 1);
+    g_test_expect_message(NULL, G_LOG_LEVEL_WARNING, "*Could not write recovery file*");
+    g_assert_false(lmme_document_test_run_recovery_timeout(doc));
+    g_test_assert_expected_messages();
+    lmme_safe_write_test_reset();
+    g_assert_cmpuint(doc->recovery_id, ==, 0);
+    g_assert_true(doc->recovery_failed);
+    g_assert_true(doc->modified);
+
+    g_assert_true(lmme_document_flush_recovery(doc, NULL));
+    g_assert_false(doc->recovery_failed);
+
+    doc->recovery_failed = TRUE;
+    g_assert_cmpint(lmme_document_save(doc, NULL),
+                    ==,
+                    LMME_DOCUMENT_SAVE_COMMITTED_DURABLE);
+    g_assert_false(doc->recovery_failed);
+    g_assert_false(doc->modified);
+
+    test_document_environment_clear(&app, doc, root, cache);
+}
+
+static void
+test_stale_recovery_snapshot_does_not_clear_failure(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-document-stale-recovery-XXXXXX", NULL);
+    g_autofree char *cache = g_build_filename(root, "recovery", NULL);
+    g_autofree char *original = g_build_filename(root, "note.md", NULL);
+    g_autoptr(GError) error = NULL;
+    LmmeApp app = {0};
+    LmmeDocument *doc = NULL;
+    guint64 stale_revision = 0;
+
+    g_assert_true(g_file_set_contents(original, "disk", -1, NULL));
+    app.workspace = lmme_workspace_new(root);
+    app.recovery_store = lmme_recovery_store_new(cache);
+    doc = test_document_new(&app, original, "stale text");
+    doc->recovery_failed = TRUE;
+    stale_revision = doc->content_revision;
+    doc->content_revision++;
+
+    g_assert_false(lmme_document_write_recovery_snapshot(doc,
+                                                         "stale text",
+                                                         strlen("stale text"),
+                                                         stale_revision,
+                                                         &error));
+    g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_AGAIN);
+    g_assert_true(doc->recovery_failed);
+    g_clear_error(&error);
+    g_assert_true(lmme_document_flush_recovery(doc, &error));
+    g_assert_no_error(error);
+    g_assert_false(doc->recovery_failed);
+
+    test_document_environment_clear(&app, doc, root, cache);
+}
+
+static void
+test_recovery_failure_is_independent_of_document_state(void)
+{
+    LmmeDocument doc = {0};
+    g_autofree char *relative_path = g_strdup("note.md");
+    g_autofree char *status = NULL;
+
+    doc.relative_path = relative_path;
+    doc.recovery_failed = TRUE;
+    doc.disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
+    g_assert_cmpstr(lmme_document_save_state_label(&doc), ==, "Conflict");
+    status = lmme_statusbar_format_document(&doc, 12, 4, 350, FALSE);
+    g_assert_cmpstr(status,
+                    ==,
+                    "note.md | Ln 12, Col 4 | 350 words | Conflict | Recovery failed | Source");
+    g_clear_pointer(&status, g_free);
+    doc.disk_state = LMME_DISK_STATE_EXTERNAL_DELETED;
+    g_assert_cmpstr(lmme_document_save_state_label(&doc), ==, "Deleted");
+    status = lmme_statusbar_format_document(&doc, 12, 4, 350, TRUE);
+    g_assert_nonnull(strstr(status, "Deleted | Recovery failed | Editable Preview"));
+    g_clear_pointer(&status, g_free);
+    doc.disk_state = LMME_DISK_STATE_NORMAL;
+    doc.save_state = LMME_SAVE_STATE_MODIFIED;
+    g_assert_cmpstr(lmme_document_save_state_label(&doc), ==, "Modified");
+    doc.save_state = LMME_SAVE_STATE_ERROR;
+    g_assert_cmpstr(lmme_document_save_state_label(&doc), ==, "Error");
+    g_assert_true(doc.recovery_failed);
+}
+
+static void
+test_discard_close_disposition_is_committed_explicitly(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-document-close-discard-XXXXXX", NULL);
+    g_autofree char *cache = g_build_filename(root, "recovery", NULL);
+    g_autofree char *original = g_build_filename(root, "note.md", NULL);
+    LmmeApp app = {0};
+    LmmeDocument doc = {0};
+
+    g_assert_true(g_file_set_contents(original, "disk", -1, NULL));
+    app.recovery_store = lmme_recovery_store_new(cache);
+    doc.app = &app;
+    doc.path = original;
+    g_assert_true(lmme_recovery_write(app.recovery_store,
+                                      original,
+                                      root,
+                                      NULL,
+                                      "local",
+                                      5,
+                                      NULL));
+
+    doc.pending_close = LMME_PENDING_CLOSE_KEEP_RECOVERY;
+    lmme_tabs_test_commit_close_disposition(&doc);
+    g_assert_cmpint(doc.pending_close, ==, LMME_PENDING_CLOSE_NONE);
+    g_assert_true(lmme_recovery_exists(app.recovery_store, original));
+
+    doc.pending_close = LMME_PENDING_CLOSE_DISCARD_LOCAL;
+    lmme_tabs_test_commit_close_disposition(&doc);
+    g_assert_cmpint(doc.pending_close, ==, LMME_PENDING_CLOSE_NONE);
+    g_assert_false(lmme_recovery_exists(app.recovery_store, original));
+
+    lmme_recovery_store_free(app.recovery_store);
+    remove_directory_contents(cache);
+    g_rmdir(cache);
+    g_unlink(original);
+    g_rmdir(root);
+}
+
+static void
+test_external_states_consume_recovery_failure(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-document-external-recovery-XXXXXX", NULL);
+    g_autofree char *cache = g_build_filename(root, "recovery", NULL);
+    g_autofree char *original = g_build_filename(root, "note.md", NULL);
+    g_autoptr(GError) error = NULL;
+    LmmeApp app = {0};
+    LmmeDocument *doc = NULL;
+
+    g_assert_true(g_file_set_contents(original, "disk", -1, NULL));
+    app.workspace = lmme_workspace_new(root);
+    app.recovery_store = lmme_recovery_store_new(cache);
+    doc = test_document_new(&app, original, "local");
+
+    doc->disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
+    lmme_safe_write_test_fail_at(LMME_SAFE_WRITE_TEST_FAIL_TEMP_CREATE, 1);
+    g_assert_false(lmme_document_flush_recovery(doc, &error));
+    lmme_safe_write_test_reset();
+    g_assert_nonnull(error);
+    g_assert_true(doc->recovery_failed);
+    g_assert_false(lmme_external_conflict_reload_allowed(TRUE, !doc->recovery_failed));
+    g_clear_error(&error);
+
+    g_assert_true(lmme_document_flush_recovery(doc, &error));
+    g_assert_no_error(error);
+    g_assert_false(doc->recovery_failed);
+    g_assert_true(lmme_external_conflict_reload_allowed(TRUE, !doc->recovery_failed));
+
+    doc->disk_state = LMME_DISK_STATE_EXTERNAL_DELETED;
+    lmme_safe_write_test_fail_at(LMME_SAFE_WRITE_TEST_FAIL_TEMP_CREATE, 1);
+    g_assert_false(lmme_document_flush_recovery(doc, &error));
+    lmme_safe_write_test_reset();
+    g_assert_nonnull(error);
+    g_assert_true(doc->recovery_failed);
+    g_assert_false(lmme_external_conflict_reload_allowed(FALSE, !doc->recovery_failed));
+    g_clear_error(&error);
+
+    test_document_environment_clear(&app, doc, root, cache);
 }
 
 static void
@@ -265,6 +456,7 @@ test_save_uncertain_commit_keeps_recovery(void)
     g_assert_true(doc->has_expected_internal_fingerprint);
     g_assert_true(doc->modified);
     g_assert_cmpint(doc->save_state, ==, LMME_SAVE_STATE_ERROR);
+    g_assert_false(doc->recovery_failed);
     entries = lmme_recovery_list(app.recovery_store, NULL);
     g_assert_cmpuint(entries->len, ==, 1);
     g_assert_true(g_file_get_contents(((LmmeRecoveryEntry *)g_ptr_array_index(entries, 0))->recovery_path,
@@ -403,6 +595,15 @@ main(int argc, char **argv)
     g_test_add_func("/document/overwrite/explicit-policy", test_overwrite_uses_explicit_conflict_policy);
     g_test_add_func("/document/conflict-blocks-autosave", test_conflict_blocks_autosave);
     g_test_add_func("/document/bulk-close/two-phase", test_bulk_close_prepare_is_all_or_nothing);
+    g_test_add_func("/document/recovery/failure-retry", test_recovery_failure_state_and_retry);
+    g_test_add_func("/document/recovery/stale-snapshot",
+                    test_stale_recovery_snapshot_does_not_clear_failure);
+    g_test_add_func("/document/recovery/composite-state",
+                    test_recovery_failure_is_independent_of_document_state);
+    g_test_add_func("/document/close/discard-commit",
+                    test_discard_close_disposition_is_committed_explicitly);
+    g_test_add_func("/document/recovery/external-states",
+                    test_external_states_consume_recovery_failure);
     g_test_add_func("/document/preview-cursor-incremental", test_cursor_preview_update_does_not_full_parse);
     return g_test_run();
 }

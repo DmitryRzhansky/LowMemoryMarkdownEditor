@@ -241,8 +241,12 @@ remove_document(LmmeApp *app, LmmeDocument *doc)
 static gboolean
 prepare_document_close(LmmeDocument *doc)
 {
-    if (doc == NULL || (!doc->modified && !doc->restored_from_recovery &&
-                        doc->disk_state == LMME_DISK_STATE_NORMAL)) {
+    if (doc == NULL) {
+        return TRUE;
+    }
+    doc->pending_close = LMME_PENDING_CLOSE_NONE;
+    if (!doc->modified && !doc->restored_from_recovery &&
+        doc->disk_state == LMME_DISK_STATE_NORMAL) {
         return TRUE;
     }
 
@@ -250,33 +254,47 @@ prepare_document_close(LmmeDocument *doc)
         g_autoptr(GError) recovery_error = NULL;
         g_autoptr(GError) save_error = NULL;
         gboolean recovery_ok = lmme_document_flush_recovery(doc, &recovery_error);
-        gboolean allow_retry = doc->disk_state == LMME_DISK_STATE_NORMAL;
+        gboolean can_save_directly = doc->disk_state == LMME_DISK_STATE_NORMAL;
+        LmmeDocumentSaveResult save_result = LMME_DOCUMENT_SAVE_NOT_COMMITTED;
         const char *detail = NULL;
 
-        if (allow_retry &&
-            lmme_document_save(doc, &save_error) == LMME_DOCUMENT_SAVE_COMMITTED_DURABLE) {
+        if (can_save_directly) {
+            save_result = lmme_document_save(doc, &save_error);
+        }
+        if (save_result == LMME_DOCUMENT_SAVE_COMMITTED_DURABLE &&
+            !doc->modified && !doc->recovery_failed) {
             return TRUE;
         }
-        if (!allow_retry) {
+        recovery_ok = !doc->recovery_failed;
+        if (!recovery_ok) {
+            detail = recovery_error != NULL
+                         ? recovery_error->message
+                         : "Recovery data could not be written.";
+        } else if (!can_save_directly) {
             detail = "The file has an unresolved external change. Recovery was kept; resolve the conflict before overwriting the file.";
         } else if (save_error != NULL) {
             detail = save_error->message;
-        } else if (recovery_error != NULL) {
-            detail = recovery_error->message;
         }
 
         LmmeSaveFailureChoice choice = lmme_dialog_resolve_save_failure(
             GTK_WINDOW(doc->app->window),
             doc->relative_path,
             detail,
-            allow_retry,
-            recovery_ok);
+            TRUE,
+            recovery_ok,
+            TRUE);
         if (choice == LMME_SAVE_FAILURE_RETRY) {
             continue;
         }
         if (choice == LMME_SAVE_FAILURE_KEEP_RECOVERY) {
+            doc->pending_close = LMME_PENDING_CLOSE_KEEP_RECOVERY;
             return TRUE;
         }
+        if (choice == LMME_SAVE_FAILURE_DISCARD_LOCAL) {
+            doc->pending_close = LMME_PENDING_CLOSE_DISCARD_LOCAL;
+            return TRUE;
+        }
+        doc->pending_close = LMME_PENDING_CLOSE_NONE;
         return FALSE;
     }
 }
@@ -290,7 +308,19 @@ lmme_tabs_test_prepare_documents(GPtrArray *documents,
         return FALSE;
     }
     for (guint i = 0; i < documents->len; i++) {
+        LmmeDocument *doc = g_ptr_array_index(documents, i);
+        if (doc != NULL) {
+            doc->pending_close = LMME_PENDING_CLOSE_NONE;
+        }
+    }
+    for (guint i = 0; i < documents->len; i++) {
         if (!prepare(g_ptr_array_index(documents, i), user_data)) {
+            for (guint j = 0; j < documents->len; j++) {
+                LmmeDocument *doc = g_ptr_array_index(documents, j);
+                if (doc != NULL) {
+                    doc->pending_close = LMME_PENDING_CLOSE_NONE;
+                }
+            }
             return FALSE;
         }
     }
@@ -347,6 +377,24 @@ prepare_document_snapshot(GPtrArray *documents)
 }
 
 static void
+commit_close_disposition(LmmeDocument *doc)
+{
+    if (doc == NULL) {
+        return;
+    }
+    if (doc->pending_close == LMME_PENDING_CLOSE_DISCARD_LOCAL) {
+        (void)lmme_recovery_remove(doc->app->recovery_store, doc->path, NULL);
+    }
+    doc->pending_close = LMME_PENDING_CLOSE_NONE;
+}
+
+void
+lmme_tabs_test_commit_close_disposition(LmmeDocument *doc)
+{
+    commit_close_disposition(doc);
+}
+
+static void
 commit_document_snapshot(LmmeApp *app,
                          GPtrArray *documents,
                          LmmeDocument *anchor)
@@ -355,6 +403,7 @@ commit_document_snapshot(LmmeApp *app,
     for (guint i = 0; i < documents->len; i++) {
         LmmeDocument *doc = g_ptr_array_index(documents, i);
         int page = gtk_notebook_page_num(GTK_NOTEBOOK(app->notebook), doc->scroller);
+        commit_close_disposition(doc);
         if (page >= 0) {
             gtk_notebook_remove_page(GTK_NOTEBOOK(app->notebook), page);
         }
@@ -397,6 +446,7 @@ lmme_tabs_close_active(LmmeApp *app)
         return;
     }
 
+    commit_close_disposition(doc);
     gtk_notebook_remove_page(GTK_NOTEBOOK(app->notebook), page);
     remove_document(app, doc);
     lmme_window_update_status(app);

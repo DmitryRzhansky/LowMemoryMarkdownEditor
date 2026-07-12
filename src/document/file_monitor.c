@@ -37,13 +37,25 @@ lmme_document_resolve_external_conflict(LmmeDocument *doc)
 {
     LmmeExternalConflictChoice choice;
     gboolean file_exists;
+    gboolean recovery_ok;
+    g_autoptr(GError) recovery_error = NULL;
 
     if (doc == NULL || doc->disk_state == LMME_DISK_STATE_NORMAL) {
         return TRUE;
     }
 
     file_exists = doc->disk_state != LMME_DISK_STATE_EXTERNAL_DELETED;
-    choice = lmme_dialog_external_conflict(GTK_WINDOW(doc->app->window), doc->path, file_exists);
+    recovery_ok = lmme_document_flush_recovery(doc, &recovery_error);
+    if (!recovery_ok) {
+        lmme_dialog_error(GTK_WINDOW(doc->app->window),
+                          "Could not write recovery data.",
+                          recovery_error != NULL ? recovery_error->message : NULL);
+    }
+    choice = lmme_dialog_external_conflict(
+        GTK_WINDOW(doc->app->window),
+        doc->path,
+        file_exists,
+        lmme_external_conflict_reload_allowed(file_exists, recovery_ok));
     if (choice == LMME_EXTERNAL_CONFLICT_RELOAD) {
         LmmeFileFingerprint fingerprint = {0};
         g_autoptr(GError) error = NULL;
@@ -102,7 +114,6 @@ lmme_document_resolve_external_conflict(LmmeDocument *doc)
         return TRUE;
     }
 
-    (void)lmme_document_flush_recovery(doc, NULL);
     lmme_window_update_status(doc->app);
     return FALSE;
 }
@@ -130,8 +141,10 @@ reload_document_from_disk(LmmeDocument *doc,
     doc->has_expected_internal_fingerprint = FALSE;
     doc->last_known_fingerprint = *fingerprint;
     doc->base_fingerprint = *fingerprint;
+    doc->content_revision++;
     g_clear_pointer(&doc->recovery_source_path, g_free);
     doc->restored_from_recovery = FALSE;
+    doc->recovery_failed = FALSE;
     lmme_document_set_save_state(doc, LMME_SAVE_STATE_SAVED);
     if (doc->app->preview_enabled) {
         (void)lmme_document_set_preview_visible(doc, TRUE);
@@ -180,6 +193,13 @@ lmme_file_change_decide(const LmmeFileFingerprint *current,
     return LMME_FILE_CHANGE_EXTERNAL_CHANGED;
 }
 
+gboolean
+lmme_external_conflict_reload_allowed(gboolean file_exists,
+                                      gboolean recovery_durable)
+{
+    return file_exists && recovery_durable;
+}
+
 static void
 on_file_monitor_changed(GFileMonitor *monitor,
                         GFile *file,
@@ -220,7 +240,6 @@ on_file_monitor_changed(GFileMonitor *monitor,
     if (action == LMME_FILE_CHANGE_EXTERNAL_DELETED) {
         doc->disk_state = LMME_DISK_STATE_EXTERNAL_DELETED;
         lmme_document_cancel_autosave(doc);
-        (void)lmme_document_flush_recovery(doc, NULL);
         lmme_window_update_status(doc->app);
         (void)lmme_document_resolve_external_conflict(doc);
         return;
@@ -235,7 +254,6 @@ on_file_monitor_changed(GFileMonitor *monitor,
 
     doc->disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
     lmme_document_cancel_autosave(doc);
-    (void)lmme_document_flush_recovery(doc, NULL);
     lmme_window_update_status(doc->app);
     (void)lmme_document_resolve_external_conflict(doc);
 }

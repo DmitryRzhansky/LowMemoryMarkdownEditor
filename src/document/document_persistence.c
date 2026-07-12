@@ -39,7 +39,7 @@ lmme_document_persist(LmmeDocument *doc,
     LmmeSafeWriteOutcome write_outcome;
     LmmeDocumentSaveResult result;
     gboolean path_changed = FALSE;
-    const char *workspace_path = NULL;
+    guint64 snapshot_revision = 0;
 
     if (doc == NULL) {
         return LMME_DOCUMENT_SAVE_COMMITTED_DURABLE;
@@ -76,6 +76,7 @@ lmme_document_persist(LmmeDocument *doc,
                                 : g_path_get_basename(canonical_target);
     }
     snapshot = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
+    snapshot_revision = doc->content_revision;
 
     write_outcome = lmme_safe_write_file(canonical_target,
                                          snapshot,
@@ -106,6 +107,11 @@ lmme_document_persist(LmmeDocument *doc,
     lmme_document_cancel_autosave(doc);
     lmme_document_cancel_recovery(doc);
     if (result == LMME_DOCUMENT_SAVE_COMMITTED_DURABLE) {
+        if (snapshot_revision != doc->content_revision) {
+            lmme_document_set_save_state(doc, LMME_SAVE_STATE_MODIFIED);
+            lmme_document_schedule_recovery(doc);
+            return result;
+        }
         gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc->buffer), FALSE);
         (void)lmme_recovery_remove(doc->app->recovery_store, doc->path, NULL);
         if (path_changed) {
@@ -113,20 +119,18 @@ lmme_document_persist(LmmeDocument *doc,
         }
         g_clear_pointer(&doc->recovery_source_path, g_free);
         doc->restored_from_recovery = FALSE;
+        doc->recovery_failed = FALSE;
         lmme_document_set_save_state(doc, LMME_SAVE_STATE_SAVED);
         return result;
     }
 
     gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc->buffer), TRUE);
     lmme_document_set_save_state(doc, LMME_SAVE_STATE_ERROR);
-    workspace_path = doc->app->workspace != NULL ? doc->app->workspace->path : NULL;
-    if (lmme_recovery_write(doc->app->recovery_store,
-                            doc->path,
-                            workspace_path,
-                            &doc->base_fingerprint,
-                            snapshot,
-                            strlen(snapshot),
-                            NULL)) {
+    if (lmme_document_write_recovery_snapshot(doc,
+                                              snapshot,
+                                              strlen(snapshot),
+                                              snapshot_revision,
+                                              NULL)) {
         if (path_changed) {
             (void)lmme_recovery_remove(doc->app->recovery_store, old_path, NULL);
         }

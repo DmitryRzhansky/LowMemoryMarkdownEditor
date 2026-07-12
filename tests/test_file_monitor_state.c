@@ -104,11 +104,29 @@ test_internal_fingerprint_is_consumed_once(void)
                     LMME_FILE_CHANGE_IGNORE);
 }
 
+static void
+test_external_conflict_reload_requires_current_recovery(void)
+{
+    g_assert_true(lmme_external_conflict_reload_allowed(TRUE, TRUE));
+    g_assert_false(lmme_external_conflict_reload_allowed(TRUE, FALSE));
+}
+
+static void
+test_external_delete_never_allows_reload(void)
+{
+    g_assert_false(lmme_external_conflict_reload_allowed(FALSE, TRUE));
+    g_assert_false(lmme_external_conflict_reload_allowed(FALSE, FALSE));
+}
+
 int
 main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
     g_test_add_func("/file-monitor/decisions", test_file_change_decisions);
     g_test_add_func("/file-monitor/internal-once", test_internal_fingerprint_is_consumed_once);
+    g_test_add_func("/file-monitor/conflict/reload-policy",
+                    test_external_conflict_reload_requires_current_recovery);
+    g_test_add_func("/file-monitor/deleted/reload-policy",
+                    test_external_delete_never_allows_reload);
     return g_test_run();
 }

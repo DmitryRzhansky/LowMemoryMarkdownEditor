@@ -27,6 +27,8 @@ LmmeFileChangeAction lmme_file_change_decide(const LmmeFileFingerprint *current,
                                               gboolean modified,
                                               gboolean restored,
                                               LmmeDiskState disk_state);
+gboolean lmme_external_conflict_reload_allowed(gboolean file_exists,
+                                               gboolean recovery_durable);
 
 /* doc is borrowed; attach/detach update only the monitor owned by doc. */
 void lmme_document_file_monitor_attach(LmmeDocument *doc);

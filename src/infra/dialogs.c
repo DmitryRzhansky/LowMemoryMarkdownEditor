@@ -397,11 +397,13 @@ lmme_dialog_resolve_save_failure(GtkWindow *parent,
                                  const char *filename,
                                  const char *detail,
                                  gboolean allow_retry,
-                                 gboolean allow_keep_recovery)
+                                 gboolean allow_keep_recovery,
+                                 gboolean allow_discard_local)
 {
     enum {
         RESPONSE_RETRY = 1,
-        RESPONSE_KEEP_RECOVERY = 2
+        RESPONSE_KEEP_RECOVERY = 2,
+        RESPONSE_DISCARD_LOCAL = 3
     };
     g_autofree char *message = g_strdup_printf("Could not safely close %s.",
                                                filename != NULL ? filename : "file");
@@ -419,6 +421,9 @@ lmme_dialog_resolve_save_failure(GtkWindow *parent,
     if (allow_keep_recovery) {
         dialog_add_button(&shell, "Close and Keep Recovery", RESPONSE_KEEP_RECOVERY);
     }
+    if (allow_discard_local) {
+        dialog_add_button(&shell, "Discard Local Changes", RESPONSE_DISCARD_LOCAL);
+    }
     response = dialog_run(&shell);
     dialog_shell_destroy(&shell);
     if (response == RESPONSE_RETRY) {
@@ -426,6 +431,9 @@ lmme_dialog_resolve_save_failure(GtkWindow *parent,
     }
     if (response == RESPONSE_KEEP_RECOVERY) {
         return LMME_SAVE_FAILURE_KEEP_RECOVERY;
+    }
+    if (response == RESPONSE_DISCARD_LOCAL) {
+        return LMME_SAVE_FAILURE_DISCARD_LOCAL;
     }
     return LMME_SAVE_FAILURE_CANCEL;
 }
@@ -466,7 +474,8 @@ lmme_dialog_choose_recovery(GtkWindow *parent,
 LmmeExternalConflictChoice
 lmme_dialog_external_conflict(GtkWindow *parent,
                               const char *path,
-                              gboolean file_exists)
+                              gboolean file_exists,
+                              gboolean allow_reload)
 {
     enum {
         RESPONSE_RELOAD = 1,
@@ -484,7 +493,7 @@ lmme_dialog_external_conflict(GtkWindow *parent,
     dialog_add_button(&shell, "Keep Local Changes", GTK_RESPONSE_CANCEL);
     dialog_add_button(&shell, "Save As", RESPONSE_SAVE_AS);
     dialog_add_button(&shell, "Overwrite Disk", RESPONSE_OVERWRITE);
-    if (file_exists) {
+    if (file_exists && allow_reload) {
         dialog_add_button(&shell, "Reload from Disk", RESPONSE_RELOAD);
     }
     response = dialog_run(&shell);

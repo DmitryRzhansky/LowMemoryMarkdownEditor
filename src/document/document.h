@@ -29,6 +29,12 @@ typedef enum {
     LMME_DOCUMENT_SAVE_COMMITTED_NOT_DURABLE
 } LmmeDocumentSaveResult;
 
+typedef enum {
+    LMME_PENDING_CLOSE_NONE = 0,
+    LMME_PENDING_CLOSE_KEEP_RECOVERY,
+    LMME_PENDING_CLOSE_DISCARD_LOCAL
+} LmmePendingCloseDisposition;
+
 struct _LmmeDocument {
     LmmeApp *app;
     guint64 id;
@@ -36,6 +42,9 @@ struct _LmmeDocument {
     char *relative_path;
     char *recovery_source_path;
     gboolean restored_from_recovery;
+    gboolean recovery_failed;
+    guint64 content_revision;
+    LmmePendingCloseDisposition pending_close;
 
     GtkWidget *source_view;
     GtkWidget *scroller;
@@ -81,6 +90,12 @@ void lmme_document_mark_recovered(LmmeDocument *doc,
                                   const char *recovery_source_path,
                                   gboolean original_changed);
 gboolean lmme_document_flush_recovery(LmmeDocument *doc, GError **error);
+/* snapshot is borrowed; success is durable only when revision is still current. */
+gboolean lmme_document_write_recovery_snapshot(LmmeDocument *doc,
+                                               const char *snapshot,
+                                               gsize length,
+                                               guint64 revision,
+                                               GError **error);
 /* Save errors are optional; COMMITTED_NOT_DURABLE still means the target changed. */
 LmmeDocumentSaveResult lmme_document_save(LmmeDocument *doc, GError **error);
 LmmeDocumentSaveResult lmme_document_overwrite(LmmeDocument *doc, GError **error);
