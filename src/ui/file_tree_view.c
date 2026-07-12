@@ -1,4 +1,5 @@
 #include "ui/file_tree_view.h"
+#include "ui/file_tree_view_test.h"
 
 #include "app/app.h"
 #include "document/tabs.h"
@@ -10,7 +11,6 @@ G_DECLARE_FINAL_TYPE(LmmeTreeItem, lmme_tree_item, LMME, TREE_ITEM, GObject)
 
 struct _LmmeTreeItem {
     GObject parent_instance;
-    LmmeFileNode *node;
     char *path;
     char *name;
     LmmeFileKind kind;
@@ -118,14 +118,13 @@ lmme_tree_item_class_init(LmmeTreeItemClass *klass)
 static void
 lmme_tree_item_init(LmmeTreeItem *item)
 {
-    item->node = NULL;
+    (void)item;
 }
 
 static LmmeTreeItem *
 tree_item_new(LmmeFileNode *node)
 {
     LmmeTreeItem *item = g_object_new(LMME_TYPE_TREE_ITEM, NULL);
-    item->node = node;
     item->path = g_strdup(node->path);
     item->name = g_strdup(node->name);
     item->kind = node->kind;
@@ -170,19 +169,24 @@ create_child_model(gpointer object, gpointer user_data)
 {
     LmmeTreeItem *item = LMME_TREE_ITEM(object);
     LmmeFileTreeState *state = user_data;
+    LmmeFileNode *node = NULL;
     GListStore *children = NULL;
     g_autoptr(GError) error = NULL;
 
-    if (item->node == NULL || item->kind != LMME_FILE_KIND_DIRECTORY) {
+    if (state == NULL || item->kind != LMME_FILE_KIND_DIRECTORY) {
         return NULL;
     }
-    children = g_hash_table_lookup(state->child_stores, item->node->path);
+    node = lmme_workspace_find_node(state->workspace, item->path);
+    if (node == NULL || node->kind != LMME_FILE_KIND_DIRECTORY) {
+        return NULL;
+    }
+    children = g_hash_table_lookup(state->child_stores, item->path);
     if (children != NULL) {
         return G_LIST_MODEL(g_object_ref(children));
     }
-    ensure_directory_monitor(state, item->node->path);
+    ensure_directory_monitor(state, item->path);
     if (!lmme_workspace_load_directory(state->workspace,
-                                       item->node,
+                                       node,
                                        state->show_hidden_files,
                                        state->show_images,
                                        &error)) {
@@ -191,12 +195,12 @@ create_child_model(gpointer object, gpointer user_data)
     }
 
     children = g_list_store_new(LMME_TYPE_TREE_ITEM);
-    for (guint i = 0; i < item->node->children->len; i++) {
-        g_autoptr(LmmeTreeItem) child = tree_item_new(g_ptr_array_index(item->node->children, i));
+    for (guint i = 0; i < node->children->len; i++) {
+        g_autoptr(LmmeTreeItem) child = tree_item_new(g_ptr_array_index(node->children, i));
         g_list_store_append(children, child);
     }
     g_hash_table_insert(state->child_stores,
-                        g_strdup(item->node->path),
+                        g_strdup(item->path),
                         g_object_ref(children));
     return G_LIST_MODEL(children);
 }
@@ -260,7 +264,7 @@ factory_bind(GtkSignalListItemFactory *factory, GtkListItem *list_item, gpointer
     (void)factory;
     (void)user_data;
 
-    if (item == NULL || item->node == NULL || expander == NULL || icon == NULL || label == NULL) {
+    if (item == NULL || expander == NULL || icon == NULL || label == NULL) {
         return;
     }
     gtk_tree_expander_set_list_row(GTK_TREE_EXPANDER(expander), row);
@@ -296,7 +300,7 @@ sync_app_selection(LmmeFileTreeState *state)
     LmmeTreeItem *item = row != NULL ? gtk_tree_list_row_get_item(row) : NULL;
 
     lmme_path_context_clear(&state->app->selection);
-    if (item == NULL || item->node == NULL) {
+    if (item == NULL) {
         return;
     }
     lmme_path_context_set(&state->app->selection, item->path, item->kind, FALSE);
@@ -318,7 +322,7 @@ on_activate(GtkListView *view, guint position, gpointer user_data)
     LmmeTreeItem *item = row != NULL ? gtk_tree_list_row_get_item(row) : NULL;
     (void)view;
 
-    if (item == NULL || item->node == NULL) {
+    if (item == NULL) {
         return;
     }
     gtk_single_selection_set_selected(state->selection, position);
@@ -381,10 +385,11 @@ restore_expanded_paths(LmmeFileTreeState *state, GHashTable *paths)
         for (guint i = 0; i < count; i++) {
             g_autoptr(GtkTreeListRow) row = gtk_tree_list_model_get_row(state->tree_model, i);
             LmmeTreeItem *item = row != NULL ? gtk_tree_list_row_get_item(row) : NULL;
-            if (item != NULL && g_hash_table_contains(paths, item->path) &&
+            if (item != NULL && item->kind == LMME_FILE_KIND_DIRECTORY &&
+                g_hash_table_contains(paths, item->path) &&
                 !gtk_tree_list_row_get_expanded(row)) {
                 gtk_tree_list_row_set_expanded(row, TRUE);
-                expanded_any = TRUE;
+                expanded_any = gtk_tree_list_row_get_expanded(row) || expanded_any;
             }
         }
     } while (expanded_any);
@@ -408,13 +413,15 @@ prune_removed_directories(LmmeFileTreeState *state)
 
     g_hash_table_iter_init(&iter, state->child_stores);
     while (g_hash_table_iter_next(&iter, &key, NULL)) {
-        if (lmme_workspace_find_node(state->workspace, key) == NULL) {
+        LmmeFileNode *node = lmme_workspace_find_node(state->workspace, key);
+        if (node == NULL || node->kind != LMME_FILE_KIND_DIRECTORY) {
             g_hash_table_iter_remove(&iter);
         }
     }
     g_hash_table_iter_init(&iter, state->directory_monitors);
     while (g_hash_table_iter_next(&iter, &key, NULL)) {
-        if (lmme_workspace_find_node(state->workspace, key) == NULL) {
+        LmmeFileNode *node = lmme_workspace_find_node(state->workspace, key);
+        if (node == NULL || node->kind != LMME_FILE_KIND_DIRECTORY) {
             g_hash_table_iter_remove(&iter);
         }
     }
@@ -586,7 +593,7 @@ lmme_file_tree_get_selected(GtkWidget *tree_view, char **out_path, LmmeFileKind 
     GtkTreeListRow *row = state != NULL ? gtk_single_selection_get_selected_item(state->selection) : NULL;
     LmmeTreeItem *item = row != NULL ? gtk_tree_list_row_get_item(row) : NULL;
 
-    if (item == NULL || item->node == NULL) {
+    if (item == NULL) {
         return FALSE;
     }
     if (out_path != NULL) {
@@ -641,4 +648,69 @@ lmme_file_tree_select_path(GtkWidget *tree_view, const char *path)
     }
     gtk_single_selection_set_selected(state->selection, GTK_INVALID_LIST_POSITION);
     return FALSE;
+}
+
+gboolean
+lmme_file_tree_test_expand_path(GtkWidget *tree_view, const char *path)
+{
+    LmmeFileTreeState *state = g_object_get_data(G_OBJECT(tree_view), state_key);
+
+    if (state == NULL || path == NULL) {
+        return FALSE;
+    }
+    for (guint i = 0; i < g_list_model_get_n_items(G_LIST_MODEL(state->tree_model)); i++) {
+        g_autoptr(GtkTreeListRow) row = gtk_tree_list_model_get_row(state->tree_model, i);
+        LmmeTreeItem *item = row != NULL ? gtk_tree_list_row_get_item(row) : NULL;
+        if (item != NULL && g_strcmp0(item->path, path) == 0) {
+            gtk_tree_list_row_set_expanded(row, TRUE);
+            return gtk_tree_list_row_get_expanded(row);
+        }
+    }
+    return FALSE;
+}
+
+GObject *
+lmme_file_tree_test_ref_item(GtkWidget *tree_view, const char *path)
+{
+    LmmeFileTreeState *state = g_object_get_data(G_OBJECT(tree_view), state_key);
+
+    if (state == NULL || path == NULL) {
+        return NULL;
+    }
+    for (guint i = 0; i < g_list_model_get_n_items(G_LIST_MODEL(state->tree_model)); i++) {
+        g_autoptr(GtkTreeListRow) row = gtk_tree_list_model_get_row(state->tree_model, i);
+        LmmeTreeItem *item = row != NULL ? gtk_tree_list_row_get_item(row) : NULL;
+        if (item != NULL && g_strcmp0(item->path, path) == 0) {
+            return g_object_ref(G_OBJECT(item));
+        }
+    }
+    return NULL;
+}
+
+GListStore *
+lmme_file_tree_test_ref_child_store(GtkWidget *tree_view, const char *path)
+{
+    LmmeFileTreeState *state = g_object_get_data(G_OBJECT(tree_view), state_key);
+    GListStore *store = state != NULL && path != NULL
+                          ? g_hash_table_lookup(state->child_stores, path)
+                          : NULL;
+
+    return store != NULL ? g_object_ref(store) : NULL;
+}
+
+GListModel *
+lmme_file_tree_test_create_child_model(GtkWidget *tree_view, GObject *item)
+{
+    LmmeFileTreeState *state = g_object_get_data(G_OBJECT(tree_view), state_key);
+
+    if (state == NULL || !LMME_IS_TREE_ITEM(item)) {
+        return NULL;
+    }
+    return create_child_model(item, state);
+}
+
+char *
+lmme_file_tree_test_dup_item_path(GObject *item)
+{
+    return LMME_IS_TREE_ITEM(item) ? g_strdup(LMME_TREE_ITEM(item)->path) : NULL;
 }
