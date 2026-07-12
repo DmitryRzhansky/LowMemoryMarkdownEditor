@@ -204,6 +204,22 @@ lmme_workspace_load_directory(LmmeWorkspace *workspace,
     return TRUE;
 }
 
+gboolean
+lmme_workspace_load_directory_path(LmmeWorkspace *workspace,
+                                     const char *directory_path,
+                                     gboolean show_hidden_files,
+                                     gboolean show_images,
+                                     GError **error)
+{
+    LmmeFileNode *node = lmme_workspace_find_node(workspace, directory_path);
+
+    if (node == NULL || node->kind != LMME_FILE_KIND_DIRECTORY) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid workspace directory node.");
+        return FALSE;
+    }
+    return lmme_workspace_load_directory(workspace, node, show_hidden_files, show_images, error);
+}
+
 static LmmeFileNode *
 find_node_recursive(LmmeFileNode *node, const char *canonical_path)
 {

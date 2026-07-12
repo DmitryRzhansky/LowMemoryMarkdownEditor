@@ -35,6 +35,11 @@ gboolean lmme_workspace_load_directory(LmmeWorkspace *workspace,
                                        gboolean show_hidden_files,
                                        gboolean show_images,
                                        GError **error);
+gboolean lmme_workspace_load_directory_path(LmmeWorkspace *workspace,
+                                            const char *directory_path,
+                                            gboolean show_hidden_files,
+                                            gboolean show_images,
+                                            GError **error);
 gboolean lmme_workspace_refresh_directory(LmmeWorkspace *workspace,
                                           const char *directory_path,
                                           gboolean show_hidden_files,
