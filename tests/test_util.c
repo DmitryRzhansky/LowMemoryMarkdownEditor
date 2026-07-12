@@ -75,6 +75,28 @@ test_path_context_lifecycle(void)
     g_assert_false(context.empty_area);
 }
 
+static void
+test_validate_basename_handles_null(void)
+{
+    g_autoptr(GError) error = NULL;
+
+    g_assert_false(lmme_validate_basename(NULL, &error));
+    g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_INVAL);
+    g_assert_cmpstr(error->message, ==, "Name must not be empty.");
+
+    g_clear_error(&error);
+    g_assert_false(lmme_validate_basename("  ", &error));
+    g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_INVAL);
+
+    g_clear_error(&error);
+    g_assert_false(lmme_validate_basename("notes/name", &error));
+    g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_INVAL);
+
+    g_clear_error(&error);
+    g_assert_true(lmme_validate_basename("name.md", &error));
+    g_assert_no_error(error);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -84,5 +106,6 @@ main(int argc, char **argv)
     g_test_add_func("/util/image-filename", test_image_filename);
     g_test_add_func("/util/relative-path", test_relative_path);
     g_test_add_func("/util/path-context", test_path_context_lifecycle);
+    g_test_add_func("/util/validate-basename", test_validate_basename_handles_null);
     return g_test_run();
 }

@@ -183,14 +183,20 @@ lmme_generate_image_filename(const char *directory,
 gboolean
 lmme_validate_basename(const char *name, GError **error)
 {
-    g_autofree char *copy = g_strdup(name != NULL ? name : "");
+    g_autofree char *copy = NULL;
+
+    if (name == NULL) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Name must not be empty.");
+        return FALSE;
+    }
+    copy = g_strdup(name);
 
     if (g_strstrip(copy)[0] == '\0') {
         g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Name must not be empty.");
         return FALSE;
     }
 
-    if (strchr(name, G_DIR_SEPARATOR) != NULL || strchr(name, '/') != NULL) {
+    if (strchr(name, G_DIR_SEPARATOR) != NULL) {
         g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Name must not contain a slash.");
         return FALSE;
     }
