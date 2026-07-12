@@ -1,5 +1,5 @@
-#ifndef LMME_DOCUMENT_FILE_FINGERPRINT_H
-#define LMME_DOCUMENT_FILE_FINGERPRINT_H
+#ifndef LMME_INFRA_FILE_FINGERPRINT_H
+#define LMME_INFRA_FILE_FINGERPRINT_H
 
 #include <glib.h>
 
@@ -14,6 +14,9 @@ typedef struct {
 gboolean lmme_file_fingerprint_read(const char *path,
                                     LmmeFileFingerprint *out_fingerprint,
                                     GError **error);
+gboolean lmme_file_fingerprint_read_fd(int fd,
+                                       LmmeFileFingerprint *out_fingerprint,
+                                       GError **error);
 gboolean lmme_file_fingerprint_equal(const LmmeFileFingerprint *left,
                                      const LmmeFileFingerprint *right);
 

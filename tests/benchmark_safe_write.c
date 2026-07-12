@@ -17,7 +17,9 @@ run_case(const char *directory, gsize bytes)
     contents[bytes] = '\0';
 
     started = g_get_monotonic_time();
-    g_assert_true(lmme_safe_write_file(path, contents, bytes, &error));
+    LmmeSafeWriteOutcome outcome = lmme_safe_write_file(path, contents, bytes, &error);
+
+    g_assert_cmpint(outcome.result, ==, LMME_SAFE_WRITE_COMMITTED_DURABLE);
     g_assert_no_error(error);
     elapsed = g_get_monotonic_time() - started;
 

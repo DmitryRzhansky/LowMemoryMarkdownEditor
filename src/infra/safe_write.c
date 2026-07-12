@@ -81,9 +81,10 @@ write_all(int fd,
     return TRUE;
 }
 
-gboolean
+LmmeSafeWriteOutcome
 lmme_safe_write_file(const char *path, const char *contents, gsize length, GError **error)
 {
+    LmmeSafeWriteOutcome outcome = {0};
     g_autofree char *resolved_path = NULL;
     const char *target_path = path;
     g_autofree char *dir = NULL;
@@ -97,11 +98,10 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
     int dir_fd = -1;
     guint invocation = ++test_state.current_invocation;
     gboolean renamed = FALSE;
-    gboolean success = FALSE;
 
     if (path == NULL || path[0] == '\0' || (contents == NULL && length > 0)) {
         g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid file save request.");
-        return FALSE;
+        return outcome;
     }
 
     if (lstat(path, &link_stat) == 0 && S_ISLNK(link_stat.st_mode)) {
@@ -111,7 +111,7 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
                         G_FILE_ERROR,
                         g_file_error_from_errno(errno),
                         "Could not resolve symbolic link before saving.");
-            return FALSE;
+            return outcome;
         }
         target_path = resolved_path;
     }
@@ -120,7 +120,7 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
         mode = target_stat.st_mode & 07777;
     } else if (errno != ENOENT) {
         g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not inspect file before saving.");
-        return FALSE;
+        return outcome;
     }
 
     dir = g_path_get_dirname(target_path);
@@ -132,13 +132,13 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
                     G_FILE_ERROR,
                     (gint)g_file_error_from_errno(errno),
                     "Could not create temporary save file.");
-        return FALSE;
+        return outcome;
     }
     fd = g_mkstemp_full(tmp_path, O_RDWR | O_CLOEXEC, (gint)mode);
 
     if (fd < 0) {
         g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not create temporary save file.");
-        return FALSE;
+        return outcome;
     }
 
     if (test_fault_should_fail(LMME_SAFE_WRITE_TEST_FAIL_FCHMOD, invocation) ||
@@ -154,6 +154,10 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
     if (test_fault_should_fail(LMME_SAFE_WRITE_TEST_FAIL_FILE_FSYNC, invocation) ||
         fsync(fd) != 0) {
         g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not flush temporary save file.");
+        goto out;
+    }
+
+    if (!lmme_file_fingerprint_read_fd(fd, &outcome.fingerprint, error)) {
         goto out;
     }
 
@@ -177,6 +181,7 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
         goto out;
     }
     renamed = TRUE;
+    outcome.result = LMME_SAFE_WRITE_COMMITTED_NOT_DURABLE;
 
     if (test_fault_should_fail(LMME_SAFE_WRITE_TEST_FAIL_DIRECTORY_OPEN, invocation)) {
         g_set_error(error,
@@ -195,7 +200,7 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
         g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not flush parent directory after saving.");
         goto out;
     }
-    success = TRUE;
+    outcome.result = LMME_SAFE_WRITE_COMMITTED_DURABLE;
 
 out:
     if (fd >= 0) {
@@ -207,5 +212,16 @@ out:
     if (!renamed) {
         g_unlink(tmp_path);
     }
-    return success;
+    return outcome;
+}
+
+gboolean
+lmme_safe_write_file_legacy(const char *path,
+                            const char *contents,
+                            gsize length,
+                            GError **error)
+{
+    LmmeSafeWriteOutcome outcome = lmme_safe_write_file(path, contents, length, error);
+
+    return outcome.result == LMME_SAFE_WRITE_COMMITTED_DURABLE;
 }

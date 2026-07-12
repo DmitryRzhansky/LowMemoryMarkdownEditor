@@ -222,7 +222,9 @@ lmme_config_save(const LmmeConfig *config, const char *path, GError **error)
         return FALSE;
     }
 
-    return lmme_safe_write_file(path, data, length, error);
+    LmmeSafeWriteOutcome outcome = lmme_safe_write_file(path, data, length, error);
+
+    return outcome.result == LMME_SAFE_WRITE_COMMITTED_DURABLE;
 }
 
 void

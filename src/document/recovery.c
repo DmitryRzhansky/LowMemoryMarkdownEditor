@@ -134,7 +134,7 @@ lmme_recovery_write(LmmeRecoveryStore *store,
 
     recovery_path = lmme_recovery_path_for_original(store, original_path);
     metadata_path = metadata_path_for_original(store, original_path, ".meta");
-    if (!lmme_safe_write_file(recovery_path, contents != NULL ? contents : "", length, error)) {
+    if (!lmme_safe_write_file_legacy(recovery_path, contents != NULL ? contents : "", length, error)) {
         return FALSE;
     }
 
@@ -153,7 +153,7 @@ lmme_recovery_write(LmmeRecoveryStore *store,
     g_key_file_set_uint64(metadata, "original", "device", fingerprint.device);
     metadata_text = g_key_file_to_data(metadata, &metadata_length, error);
     if (metadata_text == NULL ||
-        !lmme_safe_write_file(metadata_path, metadata_text, metadata_length, error)) {
+        !lmme_safe_write_file_legacy(metadata_path, metadata_text, metadata_length, error)) {
         g_unlink(recovery_path);
         return FALSE;
     }

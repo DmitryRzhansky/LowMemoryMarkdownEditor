@@ -4,7 +4,7 @@
 #include <gtk/gtk.h>
 #include <gtksourceview/gtksource.h>
 
-#include "document/file_fingerprint.h"
+#include "infra/file_fingerprint.h"
 #include "editor/preview.h"
 
 typedef struct _LmmeApp LmmeApp;

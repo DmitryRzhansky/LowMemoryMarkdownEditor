@@ -1,7 +1,7 @@
 #include <glib.h>
 #include <glib/gstdio.h>
 
-#include "document/file_fingerprint.h"
+#include "infra/file_fingerprint.h"
 
 static void
 test_fingerprint_tracks_replace_and_delete(void)

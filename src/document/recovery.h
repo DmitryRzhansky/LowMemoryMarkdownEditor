@@ -3,7 +3,7 @@
 
 #include <glib.h>
 
-#include "document/file_fingerprint.h"
+#include "infra/file_fingerprint.h"
 
 typedef struct _LmmeRecoveryStore LmmeRecoveryStore;
 

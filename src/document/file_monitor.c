@@ -3,7 +3,7 @@
 #include "app/app.h"
 #include "document/document.h"
 #include "document/document_autosave.h"
-#include "document/file_fingerprint.h"
+#include "infra/file_fingerprint.h"
 #include "document/recovery.h"
 #include "infra/dialogs.h"
 #include "infra/util.h"

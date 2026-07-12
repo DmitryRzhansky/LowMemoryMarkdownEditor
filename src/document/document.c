@@ -349,7 +349,7 @@ lmme_document_save(LmmeDocument *doc, GError **error)
     }
 
     text = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
-    if (!lmme_safe_write_file(doc->path, text, strlen(text), error)) {
+    if (!lmme_safe_write_file_legacy(doc->path, text, strlen(text), error)) {
         return FALSE;
     }
 
@@ -404,7 +404,7 @@ lmme_document_save_as(LmmeDocument *doc, const char *new_path, GError **error)
     }
 
     text = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
-    if (!lmme_safe_write_file(canonical_path, text, strlen(text), error)) {
+    if (!lmme_safe_write_file_legacy(canonical_path, text, strlen(text), error)) {
         return FALSE;
     }
 

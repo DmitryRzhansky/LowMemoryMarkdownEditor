@@ -84,7 +84,7 @@ core_sources = files(
   'src/document/document_autosave.c',
   'src/document/recovery.c',
   'src/document/file_monitor.c',
-  'src/document/file_fingerprint.c',
+  'src/infra/file_fingerprint.c',
 
   'src/infra/config.c',
   'src/workspace/workspace.c',
