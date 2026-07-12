@@ -61,4 +61,4 @@ paned>separator{background-color:#9ea8b0;min-width:1px;min-height:1px;}
 .statusbar{background-color:#b8c0c7;border-top:1px solid #9ea8b0;color:#273038;padding:5px 8px;}
 .searchbar{background-color:#c0c6cb;border-top:1px solid #9ea8b0;padding:3px 6px;}
 .searchbar button{padding:2px 8px;min-height:0;min-width:0;}
-.searchbar entry{padding:2px 6px;min-height:0;max-width:220px;}
+.searchbar entry{padding:2px 6px;min-height:0;}
