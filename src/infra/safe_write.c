@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 
 #include "infra/safe_write.h"
+#include "infra/safe_write_test.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -10,10 +11,56 @@
 
 #include <glib/gstdio.h>
 
+typedef struct {
+    gboolean enabled;
+    LmmeSafeWriteTestFault fault;
+    guint target_invocation;
+    guint current_invocation;
+} LmmeSafeWriteTestState;
+
+static LmmeSafeWriteTestState test_state;
+
+void
+lmme_safe_write_test_fail_at(LmmeSafeWriteTestFault fault, guint invocation)
+{
+    test_state.enabled = TRUE;
+    test_state.fault = fault;
+    test_state.target_invocation = invocation > 0 ? invocation : 1;
+    test_state.current_invocation = 0;
+}
+
+void
+lmme_safe_write_test_reset(void)
+{
+    test_state = (LmmeSafeWriteTestState){0};
+}
+
 static gboolean
-write_all(int fd, const char *contents, gsize length, GError **error)
+test_fault_should_fail(LmmeSafeWriteTestFault fault, guint invocation)
+{
+    if (!test_state.enabled || test_state.fault != fault ||
+        test_state.target_invocation != invocation) {
+        return FALSE;
+    }
+
+    test_state.enabled = FALSE;
+    errno = EIO;
+    return TRUE;
+}
+
+static gboolean
+write_all(int fd,
+          const char *contents,
+          gsize length,
+          guint invocation,
+          GError **error)
 {
     gsize written = 0;
+
+    if (test_fault_should_fail(LMME_SAFE_WRITE_TEST_FAIL_WRITE, invocation)) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_IO, "Could not write file.");
+        return FALSE;
+    }
 
     while (written < length) {
         ssize_t result = write(fd, contents + written, length - written);
@@ -48,6 +95,7 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
     mode_t mode = 0600;
     int fd = -1;
     int dir_fd = -1;
+    guint invocation = ++test_state.current_invocation;
     gboolean renamed = FALSE;
     gboolean success = FALSE;
 
@@ -79,6 +127,13 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
     base = g_path_get_basename(target_path);
     tmp_base = g_strdup_printf(".%s.lmme.XXXXXX", base);
     tmp_path = g_build_filename(dir, tmp_base, NULL);
+    if (test_fault_should_fail(LMME_SAFE_WRITE_TEST_FAIL_TEMP_CREATE, invocation)) {
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not create temporary save file.");
+        return FALSE;
+    }
     fd = g_mkstemp_full(tmp_path, O_RDWR | O_CLOEXEC, (gint)mode);
 
     if (fd < 0) {
@@ -86,20 +141,29 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
         return FALSE;
     }
 
-    if (fchmod(fd, mode) != 0) {
+    if (test_fault_should_fail(LMME_SAFE_WRITE_TEST_FAIL_FCHMOD, invocation) ||
+        fchmod(fd, mode) != 0) {
         g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not preserve file permissions.");
         goto out;
     }
 
-    if (!write_all(fd, contents != NULL ? contents : "", length, error)) {
+    if (!write_all(fd, contents != NULL ? contents : "", length, invocation, error)) {
         goto out;
     }
 
-    if (fsync(fd) != 0) {
+    if (test_fault_should_fail(LMME_SAFE_WRITE_TEST_FAIL_FILE_FSYNC, invocation) ||
+        fsync(fd) != 0) {
         g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not flush temporary save file.");
         goto out;
     }
 
+    if (test_fault_should_fail(LMME_SAFE_WRITE_TEST_FAIL_CLOSE, invocation)) {
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not close temporary save file.");
+        goto out;
+    }
     if (close(fd) != 0) {
         fd = -1;
         g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not close temporary save file.");
@@ -107,18 +171,27 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
     }
     fd = -1;
 
-    if (g_rename(tmp_path, target_path) != 0) {
+    if (test_fault_should_fail(LMME_SAFE_WRITE_TEST_FAIL_RENAME, invocation) ||
+        g_rename(tmp_path, target_path) != 0) {
         g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not replace file.");
         goto out;
     }
     renamed = TRUE;
 
+    if (test_fault_should_fail(LMME_SAFE_WRITE_TEST_FAIL_DIRECTORY_OPEN, invocation)) {
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not open parent directory after saving.");
+        goto out;
+    }
     dir_fd = g_open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0);
     if (dir_fd < 0) {
         g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not open parent directory after saving.");
         goto out;
     }
-    if (fsync(dir_fd) != 0) {
+    if (test_fault_should_fail(LMME_SAFE_WRITE_TEST_FAIL_DIRECTORY_FSYNC, invocation) ||
+        fsync(dir_fd) != 0) {
         g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not flush parent directory after saving.");
         goto out;
     }
