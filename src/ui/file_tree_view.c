@@ -199,22 +199,23 @@ create_child_model(gpointer object, gpointer user_data)
     if (state == NULL || item->kind != LMME_FILE_KIND_DIRECTORY) {
         return NULL;
     }
-    node = lmme_workspace_find_node(state->workspace, item->path);
-    if (node == NULL || node->kind != LMME_FILE_KIND_DIRECTORY) {
-        return NULL;
-    }
     children = g_hash_table_lookup(state->child_stores, item->path);
     if (children != NULL) {
         return G_LIST_MODEL(g_object_ref(children));
     }
     ensure_directory_monitor(state, item->path);
-    if (!lmme_workspace_load_directory(state->workspace,
-                                       node,
-                                       state->show_hidden_files,
-                                       state->show_images,
-                                       &error)) {
+    if (!lmme_workspace_load_directory_path(state->workspace,
+                                            item->path,
+                                            state->show_hidden_files,
+                                            state->show_images,
+                                            &error)) {
         g_warning("Could not load workspace directory: %s",
                   error != NULL ? error->message : "unknown error");
+        return NULL;
+    }
+    node = lmme_workspace_find_node(state->workspace, item->path);
+    if (node == NULL || node->children == NULL) {
+        return NULL;
     }
 
     children = g_list_store_new(LMME_TYPE_TREE_ITEM);
