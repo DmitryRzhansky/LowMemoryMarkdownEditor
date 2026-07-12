@@ -202,9 +202,32 @@ create_child_model(gpointer object, gpointer user_data)
     return G_LIST_MODEL(children);
 }
 
+static GtkWidget *
+list_item_get_tree_expander(GtkListItem *list_item)
+{
+    GtkWidget *row_widget = gtk_list_item_get_child(list_item);
+    GtkWidget *child = NULL;
+
+    if (row_widget == NULL) {
+        return NULL;
+    }
+    if (GTK_IS_TREE_EXPANDER(row_widget)) {
+        return row_widget;
+    }
+    for (child = gtk_widget_get_first_child(row_widget); child != NULL;
+         child = gtk_widget_get_next_sibling(child)) {
+        if (GTK_IS_TREE_EXPANDER(child)) {
+            return child;
+        }
+    }
+    return NULL;
+}
+
 static void
 factory_setup(GtkSignalListItemFactory *factory, GtkListItem *list_item, gpointer user_data)
 {
+    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    GtkWidget *leading = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     GtkWidget *expander = gtk_tree_expander_new();
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     GtkWidget *icon = gtk_image_new();
@@ -212,14 +235,19 @@ factory_setup(GtkSignalListItemFactory *factory, GtkListItem *list_item, gpointe
     (void)factory;
     (void)user_data;
 
+    gtk_widget_set_size_request(leading, 8, -1);
     gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
     gtk_widget_set_hexpand(label, TRUE);
     gtk_box_append(GTK_BOX(box), icon);
     gtk_box_append(GTK_BOX(box), label);
     gtk_tree_expander_set_child(GTK_TREE_EXPANDER(expander), box);
+    gtk_box_append(GTK_BOX(row), leading);
+    gtk_box_append(GTK_BOX(row), expander);
+    gtk_widget_set_hexpand(row, TRUE);
+    gtk_widget_set_hexpand(expander, TRUE);
     g_object_set_data(G_OBJECT(expander), "lmme-tree-icon", icon);
     g_object_set_data(G_OBJECT(expander), "lmme-tree-label", label);
-    gtk_list_item_set_child(list_item, expander);
+    gtk_list_item_set_child(list_item, row);
 }
 
 static void
@@ -227,13 +255,13 @@ factory_bind(GtkSignalListItemFactory *factory, GtkListItem *list_item, gpointer
 {
     GtkTreeListRow *row = gtk_list_item_get_item(list_item);
     LmmeTreeItem *item = row != NULL ? gtk_tree_list_row_get_item(row) : NULL;
-    GtkWidget *expander = gtk_list_item_get_child(list_item);
-    GtkWidget *icon = g_object_get_data(G_OBJECT(expander), "lmme-tree-icon");
-    GtkWidget *label = g_object_get_data(G_OBJECT(expander), "lmme-tree-label");
+    GtkWidget *expander = list_item_get_tree_expander(list_item);
+    GtkWidget *icon = expander != NULL ? g_object_get_data(G_OBJECT(expander), "lmme-tree-icon") : NULL;
+    GtkWidget *label = expander != NULL ? g_object_get_data(G_OBJECT(expander), "lmme-tree-label") : NULL;
     (void)factory;
     (void)user_data;
 
-    if (item == NULL || item->node == NULL) {
+    if (item == NULL || item->node == NULL || expander == NULL || icon == NULL || label == NULL) {
         return;
     }
     gtk_tree_expander_set_list_row(GTK_TREE_EXPANDER(expander), row);
@@ -249,10 +277,13 @@ factory_bind(GtkSignalListItemFactory *factory, GtkListItem *list_item, gpointer
 static void
 factory_unbind(GtkSignalListItemFactory *factory, GtkListItem *list_item, gpointer user_data)
 {
-    GtkWidget *expander = gtk_list_item_get_child(list_item);
+    GtkWidget *expander = list_item_get_tree_expander(list_item);
     (void)factory;
     (void)user_data;
 
+    if (expander == NULL) {
+        return;
+    }
     gtk_tree_expander_set_list_row(GTK_TREE_EXPANDER(expander), NULL);
     g_object_set_data_full(G_OBJECT(expander), row_path_key, NULL, NULL);
     g_object_set_data(G_OBJECT(expander), row_kind_key, NULL);
