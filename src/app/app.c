@@ -21,6 +21,34 @@ on_activate(GtkApplication *gtk_app, gpointer user_data)
     gtk_window_present(GTK_WINDOW(app->window));
 }
 
+void
+lmme_path_context_clear(LmmePathContext *context)
+{
+    if (context == NULL) {
+        return;
+    }
+    g_clear_pointer(&context->path, g_free);
+    context->kind = LMME_FILE_KIND_OTHER;
+    context->empty_area = FALSE;
+}
+
+void
+lmme_path_context_set(LmmePathContext *context,
+                      const char *path,
+                      LmmeFileKind kind,
+                      gboolean empty_area)
+{
+    if (context == NULL) {
+        return;
+    }
+    lmme_path_context_clear(context);
+    context->empty_area = empty_area;
+    if (!empty_area && path != NULL) {
+        context->path = g_strdup(path);
+        context->kind = kind;
+    }
+}
+
 static void
 on_shutdown(GApplication *application, gpointer user_data)
 {
@@ -135,8 +163,8 @@ lmme_app_free(LmmeApp *app)
     }
     g_clear_pointer(&app->workspace, lmme_workspace_free);
     g_clear_pointer(&app->recovery_store, lmme_recovery_store_free);
-    g_clear_pointer(&app->selection.path, g_free);
-    g_clear_pointer(&app->tree_context.path, g_free);
+    lmme_path_context_clear(&app->selection);
+    lmme_path_context_clear(&app->tree_context);
     g_clear_pointer(&app->config_path, g_free);
     lmme_config_clear(&app->config);
     g_free(app);

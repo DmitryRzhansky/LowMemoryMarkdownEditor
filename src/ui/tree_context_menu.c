@@ -11,38 +11,15 @@
 static GtkWidget *tree_context_popover;
 
 static void
-tree_context_clear(LmmeApp *app)
-{
-    g_clear_pointer(&app->tree_context.path, g_free);
-    app->tree_context.kind = LMME_FILE_KIND_OTHER;
-    app->tree_context.empty_area = FALSE;
-}
-
-static void
 tree_context_set(LmmeApp *app, const char *path, LmmeFileKind kind, gboolean empty_area)
 {
-    tree_context_clear(app);
-    app->tree_context.empty_area = empty_area;
-    if (empty_area || path == NULL) {
-        return;
-    }
-
-    app->tree_context.path = g_strdup(path);
-    app->tree_context.kind = kind;
+    lmme_path_context_set(&app->tree_context, path, kind, empty_area);
 }
 
 static void
 sync_selected_path_from_tree(LmmeApp *app, const char *path, LmmeFileKind kind)
 {
-    g_clear_pointer(&app->selection.path, g_free);
-    app->selection.kind = LMME_FILE_KIND_OTHER;
-    app->selection.empty_area = FALSE;
-    if (path == NULL) {
-        return;
-    }
-
-    app->selection.path = g_strdup(path);
-    app->selection.kind = kind;
+    lmme_path_context_set(&app->selection, path, kind, FALSE);
 }
 
 static gboolean

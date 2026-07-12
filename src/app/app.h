@@ -16,6 +16,12 @@ typedef struct {
     gboolean empty_area;
 } LmmePathContext;
 
+void lmme_path_context_clear(LmmePathContext *context);
+void lmme_path_context_set(LmmePathContext *context,
+                           const char *path,
+                           LmmeFileKind kind,
+                           gboolean empty_area);
+
 static inline gboolean
 lmme_path_context_is_directory(const LmmePathContext *context)
 {

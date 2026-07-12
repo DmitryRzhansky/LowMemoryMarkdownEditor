@@ -8,6 +8,7 @@
 #include "document/tabs.h"
 #include "infra/dialogs.h"
 #include "infra/util.h"
+#include "ui/file_tree_view.h"
 #include "ui/tree_context_menu.h"
 #include "ui/window.h"
 #include "workspace/workspace.h"
@@ -145,6 +146,7 @@ action_rename(LmmeApp *app)
     lmme_document_path_remap_plan_commit(remap_plan);
     lmme_document_path_remap_plan_free(remap_plan);
     lmme_window_refresh_tree_directory(app, parent_dir);
+    (void)lmme_file_tree_select_path(app->tree_view, new_path);
 }
 
 static void
@@ -199,6 +201,7 @@ action_delete(LmmeApp *app)
     }
     lmme_tabs_forget_subtree(app, path);
     lmme_window_refresh_tree_directory(app, parent_dir);
+    (void)lmme_file_tree_select_path(app->tree_view, parent_dir);
 }
 
 static void

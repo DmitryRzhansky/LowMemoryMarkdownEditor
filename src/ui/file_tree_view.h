@@ -20,5 +20,6 @@ gboolean lmme_file_tree_select_at(GtkWidget *tree_view,
                                   double y,
                                   char **out_path,
                                   LmmeFileKind *out_kind);
+gboolean lmme_file_tree_select_path(GtkWidget *tree_view, const char *path);
 
 #endif

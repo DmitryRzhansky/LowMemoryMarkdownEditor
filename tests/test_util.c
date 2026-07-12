@@ -1,6 +1,7 @@
 #include <glib.h>
 #include <glib/gstdio.h>
 
+#include "app/app.h"
 #include "infra/util.h"
 
 static void
@@ -53,6 +54,27 @@ test_relative_path(void)
     g_assert_false(lmme_path_is_inside("/tmp/workspace", "/tmp/workspace-other/a.md"));
 }
 
+static void
+test_path_context_lifecycle(void)
+{
+    LmmePathContext context = {0};
+
+    lmme_path_context_set(&context, "/workspace/note.md", LMME_FILE_KIND_MARKDOWN, FALSE);
+    g_assert_cmpstr(context.path, ==, "/workspace/note.md");
+    g_assert_cmpint(context.kind, ==, LMME_FILE_KIND_MARKDOWN);
+    g_assert_false(context.empty_area);
+
+    lmme_path_context_set(&context, NULL, LMME_FILE_KIND_OTHER, TRUE);
+    g_assert_null(context.path);
+    g_assert_cmpint(context.kind, ==, LMME_FILE_KIND_OTHER);
+    g_assert_true(context.empty_area);
+
+    lmme_path_context_clear(&context);
+    g_assert_null(context.path);
+    g_assert_cmpint(context.kind, ==, LMME_FILE_KIND_OTHER);
+    g_assert_false(context.empty_area);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -61,5 +83,6 @@ main(int argc, char **argv)
     g_test_add_func("/util/slugify", test_slugify);
     g_test_add_func("/util/image-filename", test_image_filename);
     g_test_add_func("/util/relative-path", test_relative_path);
+    g_test_add_func("/util/path-context", test_path_context_lifecycle);
     return g_test_run();
 }

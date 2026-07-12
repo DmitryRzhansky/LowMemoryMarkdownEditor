@@ -296,14 +296,11 @@ sync_app_selection(LmmeFileTreeState *state)
     GtkTreeListRow *row = gtk_single_selection_get_selected_item(state->selection);
     LmmeTreeItem *item = row != NULL ? gtk_tree_list_row_get_item(row) : NULL;
 
-    g_clear_pointer(&state->app->selection.path, g_free);
-    state->app->selection.kind = LMME_FILE_KIND_OTHER;
-    state->app->selection.empty_area = FALSE;
+    lmme_path_context_clear(&state->app->selection);
     if (item == NULL || item->node == NULL) {
         return;
     }
-    state->app->selection.path = g_strdup(item->path);
-    state->app->selection.kind = item->kind;
+    lmme_path_context_set(&state->app->selection, item->path, item->kind, FALSE);
 }
 
 static void
@@ -385,9 +382,14 @@ lmme_file_tree_populate(GtkWidget *tree_view,
     LmmeFileKind selected_kind = LMME_FILE_KIND_OTHER;
     LmmeFileTreeState *old_state = g_object_get_data(G_OBJECT(tree_view), state_key);
     LmmeFileTreeState *state = NULL;
+    LmmeApp *app = g_object_get_data(G_OBJECT(tree_view), "lmme-app");
 
     (void)lmme_file_tree_get_selected(tree_view, &selected_path, &selected_kind);
     (void)selected_kind;
+    if (app != NULL) {
+        lmme_path_context_clear(&app->selection);
+        lmme_path_context_clear(&app->tree_context);
+    }
     gtk_list_view_set_model(GTK_LIST_VIEW(tree_view), NULL);
     if (old_state != NULL) {
         if (old_state->activate_handler_id != 0) {
@@ -490,4 +492,24 @@ lmme_file_tree_select_at(GtkWidget *tree_view,
     guint position = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(picked), row_position_key)) - 1;
     gtk_single_selection_set_selected(state->selection, position);
     return lmme_file_tree_get_selected(tree_view, out_path, out_kind);
+}
+
+gboolean
+lmme_file_tree_select_path(GtkWidget *tree_view, const char *path)
+{
+    LmmeFileTreeState *state = g_object_get_data(G_OBJECT(tree_view), state_key);
+
+    if (state == NULL || path == NULL) {
+        return FALSE;
+    }
+    for (guint i = 0; i < g_list_model_get_n_items(G_LIST_MODEL(state->tree_model)); i++) {
+        g_autoptr(GtkTreeListRow) row = gtk_tree_list_model_get_row(state->tree_model, i);
+        LmmeTreeItem *item = row != NULL ? gtk_tree_list_row_get_item(row) : NULL;
+        if (item != NULL && g_strcmp0(item->path, path) == 0) {
+            gtk_single_selection_set_selected(state->selection, i);
+            return TRUE;
+        }
+    }
+    gtk_single_selection_set_selected(state->selection, GTK_INVALID_LIST_POSITION);
+    return FALSE;
 }
