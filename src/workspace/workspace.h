@@ -39,6 +39,9 @@ LmmeFileNode *lmme_workspace_find_node(LmmeWorkspace *workspace, const char *pat
 gboolean lmme_workspace_validate_target_parent(const LmmeWorkspace *workspace,
                                                 const char *path,
                                                 GError **error);
+gboolean lmme_workspace_validate_save_target(const LmmeWorkspace *workspace,
+                                              const char *path,
+                                              GError **error);
 
 void lmme_file_node_free(LmmeFileNode *node);
 

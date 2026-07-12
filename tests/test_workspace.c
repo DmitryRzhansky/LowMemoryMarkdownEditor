@@ -103,6 +103,72 @@ test_rename_is_committed_before_result(void)
 }
 
 static void
+test_save_target_containment(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-workspace-XXXXXX", NULL);
+    g_autofree char *outside = g_dir_make_tmp("lmme-test-outside-XXXXXX", NULL);
+    g_autofree char *nested = g_build_filename(root, "nested", NULL);
+    g_autofree char *existing = g_build_filename(nested, "existing.md", NULL);
+    g_autofree char *new_file = g_build_filename(nested, "new.md", NULL);
+    g_autofree char *missing = g_build_filename(root, "missing", "new.md", NULL);
+    g_autofree char *outside_file = g_build_filename(outside, "outside.md", NULL);
+    g_autofree char *outside_new = g_build_filename(outside, "new.md", NULL);
+    g_autofree char *link_outside_dir = g_build_filename(root, "outside-dir", NULL);
+    g_autofree char *link_inside_dir = g_build_filename(root, "inside-dir", NULL);
+    g_autofree char *via_outside_dir = g_build_filename(link_outside_dir, "new.md", NULL);
+    g_autofree char *via_inside_dir = g_build_filename(link_inside_dir, "new.md", NULL);
+    g_autofree char *link_outside_file = g_build_filename(root, "outside.md", NULL);
+    g_autofree char *link_inside_file = g_build_filename(root, "inside.md", NULL);
+    g_autoptr(GError) error = NULL;
+    LmmeWorkspace *workspace = lmme_workspace_new(root);
+
+    g_assert_cmpint(g_mkdir(nested, 0700), ==, 0);
+    g_assert_true(g_file_set_contents(existing, "inside", -1, NULL));
+    g_assert_true(g_file_set_contents(outside_file, "outside", -1, NULL));
+
+    g_assert_true(lmme_workspace_validate_save_target(workspace, existing, NULL));
+    g_assert_true(lmme_workspace_validate_save_target(workspace, new_file, NULL));
+
+    g_assert_cmpint(symlink(outside, link_outside_dir), ==, 0);
+    g_assert_false(lmme_workspace_validate_save_target(workspace, via_outside_dir, &error));
+    g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_PERM);
+    g_clear_error(&error);
+
+    g_assert_cmpint(symlink(nested, link_inside_dir), ==, 0);
+    g_assert_true(lmme_workspace_validate_save_target(workspace, via_inside_dir, NULL));
+
+    g_assert_cmpint(symlink(outside_file, link_outside_file), ==, 0);
+    g_assert_false(lmme_workspace_validate_save_target(workspace, link_outside_file, &error));
+    g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_PERM);
+    g_clear_error(&error);
+
+    g_assert_cmpint(symlink(existing, link_inside_file), ==, 0);
+    g_assert_true(lmme_workspace_validate_save_target(workspace, link_inside_file, NULL));
+
+    g_assert_false(lmme_workspace_validate_save_target(workspace, missing, &error));
+    g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_NOENT);
+    g_clear_error(&error);
+
+    g_assert_false(lmme_workspace_validate_save_target(workspace, root, &error));
+    g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_PERM);
+    g_clear_error(&error);
+
+    g_assert_false(lmme_workspace_validate_save_target(workspace, outside_new, &error));
+    g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_PERM);
+
+    lmme_workspace_free(workspace);
+    g_unlink(link_inside_file);
+    g_unlink(link_outside_file);
+    g_unlink(link_inside_dir);
+    g_unlink(link_outside_dir);
+    g_unlink(existing);
+    g_rmdir(nested);
+    g_unlink(outside_file);
+    g_rmdir(outside);
+    g_rmdir(root);
+}
+
+static void
 test_large_workspace_is_loaded_lazily(void)
 {
     g_autofree char *root = g_dir_make_tmp("lmme-test-workspace-XXXXXX", NULL);
@@ -149,6 +215,7 @@ main(int argc, char **argv)
     g_test_add_func("/workspace/delete/symlink", test_symlink_delete_does_not_follow_target);
     g_test_add_func("/workspace/delete/intermediate-symlink", test_intermediate_symlink_cannot_escape_workspace);
     g_test_add_func("/workspace/rename/committed", test_rename_is_committed_before_result);
+    g_test_add_func("/workspace/save-target/containment", test_save_target_containment);
     g_test_add_func("/workspace/lazy/ten-thousand-files", test_large_workspace_is_loaded_lazily);
     return g_test_run();
 }

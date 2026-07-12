@@ -280,6 +280,93 @@ lmme_workspace_validate_target_parent(const LmmeWorkspace *workspace,
     return TRUE;
 }
 
+gboolean
+lmme_workspace_validate_save_target(const LmmeWorkspace *workspace,
+                                    const char *path,
+                                    GError **error)
+{
+    g_autofree char *canonical_path = NULL;
+    g_autofree char *parent = NULL;
+    g_autofree char *workspace_real = NULL;
+    g_autofree char *parent_real = NULL;
+    g_autofree char *target_real = NULL;
+    struct stat target_info;
+    int saved_errno = 0;
+
+    if (workspace == NULL || path == NULL || path[0] == '\0') {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid save destination.");
+        return FALSE;
+    }
+
+    canonical_path = g_canonicalize_filename(path, NULL);
+    if (!ensure_workspace_target(workspace, canonical_path, error)) {
+        return FALSE;
+    }
+
+    workspace_real = realpath(workspace->path, NULL);
+    if (workspace_real == NULL) {
+        saved_errno = errno;
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(saved_errno),
+                    "Could not resolve the workspace path safely.");
+        return FALSE;
+    }
+
+    parent = g_path_get_dirname(canonical_path);
+    parent_real = realpath(parent, NULL);
+    if (parent_real == NULL) {
+        saved_errno = errno;
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(saved_errno),
+                    "Could not resolve the save destination parent.");
+        return FALSE;
+    }
+    if (!lmme_path_is_inside(workspace_real, parent_real)) {
+        g_set_error_literal(error,
+                            G_FILE_ERROR,
+                            G_FILE_ERROR_PERM,
+                            "Save destination resolves outside the workspace.");
+        return FALSE;
+    }
+
+    if (lstat(canonical_path, &target_info) != 0) {
+        if (errno == ENOENT) {
+            return TRUE;
+        }
+        saved_errno = errno;
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(saved_errno),
+                    "Could not inspect the save destination.");
+        return FALSE;
+    }
+    if (S_ISDIR(target_info.st_mode)) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_ISDIR, "Save destination is a directory.");
+        return FALSE;
+    }
+
+    target_real = realpath(canonical_path, NULL);
+    if (target_real == NULL) {
+        saved_errno = errno;
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(saved_errno),
+                    "Could not resolve the save destination safely.");
+        return FALSE;
+    }
+    if (!lmme_path_is_inside(workspace_real, target_real)) {
+        g_set_error_literal(error,
+                            G_FILE_ERROR,
+                            G_FILE_ERROR_PERM,
+                            "Save destination resolves outside the workspace.");
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 static char *
 clean_markdown_filename(const char *name)
 {

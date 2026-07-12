@@ -14,39 +14,6 @@
 #include "workspace/workspace.h"
 
 #include <string.h>
-#include <stdlib.h>
-
-static gboolean
-save_target_is_inside_workspace(const LmmeDocument *doc,
-                                const char *path,
-                                GError **error)
-{
-    g_autofree char *canonical_path = NULL;
-    g_autofree char *real_workspace = NULL;
-    g_autofree char *real_target = NULL;
-
-    if (doc == NULL || doc->app->workspace == NULL) {
-        return TRUE;
-    }
-    canonical_path = g_canonicalize_filename(path, NULL);
-    if (!lmme_path_is_inside(doc->app->workspace->path, canonical_path)) {
-        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_PERM, "Save destination is outside the workspace.");
-        return FALSE;
-    }
-
-    real_workspace = realpath(doc->app->workspace->path, NULL);
-    real_target = realpath(path, NULL);
-    if (real_workspace != NULL && real_target != NULL &&
-        !lmme_path_is_inside(real_workspace, real_target)) {
-        g_set_error_literal(error,
-                            G_FILE_ERROR,
-                            G_FILE_ERROR_PERM,
-                            "Symbolic link target is outside the workspace.");
-        return FALSE;
-    }
-    return TRUE;
-}
-
 static void on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data);
 static void on_cursor_moved(GObject *object, GParamSpec *pspec, gpointer user_data);
 
@@ -344,7 +311,8 @@ lmme_document_save(LmmeDocument *doc, GError **error)
                             "Resolve the external file conflict before saving.");
         return FALSE;
     }
-    if (!save_target_is_inside_workspace(doc, doc->path, error)) {
+    if (doc->app->workspace != NULL &&
+        !lmme_workspace_validate_save_target(doc->app->workspace, doc->path, error)) {
         return FALSE;
     }
 
@@ -399,7 +367,7 @@ lmme_document_save_as(LmmeDocument *doc, const char *new_path, GError **error)
         return FALSE;
     }
     canonical_path = g_canonicalize_filename(new_path, NULL);
-    if (!save_target_is_inside_workspace(doc, canonical_path, error)) {
+    if (!lmme_workspace_validate_save_target(doc->app->workspace, canonical_path, error)) {
         return FALSE;
     }
 
