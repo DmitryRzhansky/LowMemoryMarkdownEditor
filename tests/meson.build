@@ -14,6 +14,7 @@ test_sources = {
   'test_document_lifecycle': 'test_document_lifecycle.c',
   'test_document_paths': 'test_document_paths.c',
   'file_tree_refresh': 'test_file_tree_refresh.c',
+  'file_tree_crash_repro': 'test_file_tree_crash_repro.c',
 }
 
 foreach test_name, test_source : test_sources
