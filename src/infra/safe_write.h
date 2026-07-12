@@ -21,10 +21,4 @@ LmmeSafeWriteOutcome lmme_safe_write_file(const char *path,
                                            gsize length,
                                            GError **error);
 
-/* Transitional: TRUE requires a durable commit. Remove after stateful callers migrate. */
-gboolean lmme_safe_write_file_legacy(const char *path,
-                                     const char *contents,
-                                     gsize length,
-                                     GError **error);
-
 #endif

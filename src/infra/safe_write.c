@@ -214,14 +214,3 @@ out:
     }
     return outcome;
 }
-
-gboolean
-lmme_safe_write_file_legacy(const char *path,
-                            const char *contents,
-                            gsize length,
-                            GError **error)
-{
-    LmmeSafeWriteOutcome outcome = lmme_safe_write_file(path, contents, length, error);
-
-    return outcome.result == LMME_SAFE_WRITE_COMMITTED_DURABLE;
-}

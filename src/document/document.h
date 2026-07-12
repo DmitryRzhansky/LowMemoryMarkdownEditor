@@ -23,6 +23,12 @@ typedef enum {
     LMME_DISK_STATE_EXTERNAL_DELETED
 } LmmeDiskState;
 
+typedef enum {
+    LMME_DOCUMENT_SAVE_NOT_COMMITTED,
+    LMME_DOCUMENT_SAVE_COMMITTED_DURABLE,
+    LMME_DOCUMENT_SAVE_COMMITTED_NOT_DURABLE
+} LmmeDocumentSaveResult;
+
 struct _LmmeDocument {
     LmmeApp *app;
     guint64 id;
@@ -71,9 +77,11 @@ void lmme_document_mark_recovered(LmmeDocument *doc,
                                   const char *recovery_source_path,
                                   gboolean original_changed);
 gboolean lmme_document_flush_recovery(LmmeDocument *doc, GError **error);
-gboolean lmme_document_save(LmmeDocument *doc, GError **error);
-gboolean lmme_document_overwrite(LmmeDocument *doc, GError **error);
-gboolean lmme_document_save_as(LmmeDocument *doc, const char *new_path, GError **error);
+LmmeDocumentSaveResult lmme_document_save(LmmeDocument *doc, GError **error);
+LmmeDocumentSaveResult lmme_document_overwrite(LmmeDocument *doc, GError **error);
+LmmeDocumentSaveResult lmme_document_save_as(LmmeDocument *doc,
+                                             const char *new_path,
+                                             GError **error);
 guint lmme_document_cached_word_count(const LmmeDocument *doc);
 LmmePreviewApplyResult lmme_document_set_preview_visible(LmmeDocument *doc, gboolean visible);
 void lmme_document_update_preview_active_line(LmmeDocument *doc);

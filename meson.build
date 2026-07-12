@@ -80,6 +80,7 @@ core_sources = files(
   'src/command/command_view.c',
 
   'src/document/document.c',
+  'src/document/document_persistence.c',
   'src/document/tabs.c',
   'src/document/document_autosave.c',
   'src/document/recovery.c',

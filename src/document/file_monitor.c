@@ -60,6 +60,7 @@ lmme_document_resolve_external_conflict(LmmeDocument *doc)
         g_autofree char *suggested = recovered_save_path(doc);
         g_autofree char *path = lmme_dialog_save_markdown(GTK_WINDOW(doc->app->window), suggested);
         g_autoptr(GError) error = NULL;
+        LmmeDocumentSaveResult result;
         if (path == NULL) {
             return FALSE;
         }
@@ -67,22 +68,34 @@ lmme_document_resolve_external_conflict(LmmeDocument *doc)
             !lmme_dialog_confirm_overwrite(GTK_WINDOW(doc->app->window), path)) {
             return FALSE;
         }
-        if (!lmme_document_save_as(doc, path, &error)) {
+        result = lmme_document_save_as(doc, path, &error);
+        if (result == LMME_DOCUMENT_SAVE_NOT_COMMITTED) {
             lmme_dialog_error(GTK_WINDOW(doc->app->window),
                               "Could not save file.",
                               error != NULL ? error->message : NULL);
             return FALSE;
+        }
+        if (result == LMME_DOCUMENT_SAVE_COMMITTED_NOT_DURABLE) {
+            lmme_dialog_error(GTK_WINDOW(doc->app->window),
+                              "File was saved, but durability could not be confirmed.",
+                              error != NULL ? error->message : NULL);
         }
         lmme_window_refresh_tree_directory(doc->app, doc->app->workspace->path);
         return TRUE;
     }
     if (choice == LMME_EXTERNAL_CONFLICT_OVERWRITE) {
         g_autoptr(GError) error = NULL;
-        if (!lmme_document_overwrite(doc, &error)) {
+        LmmeDocumentSaveResult result = lmme_document_overwrite(doc, &error);
+        if (result == LMME_DOCUMENT_SAVE_NOT_COMMITTED) {
             lmme_dialog_error(GTK_WINDOW(doc->app->window),
                               "Could not overwrite file.",
                               error != NULL ? error->message : NULL);
             return FALSE;
+        }
+        if (result == LMME_DOCUMENT_SAVE_COMMITTED_NOT_DURABLE) {
+            lmme_dialog_error(GTK_WINDOW(doc->app->window),
+                              "File was saved, but durability could not be confirmed.",
+                              error != NULL ? error->message : NULL);
         }
         lmme_window_refresh_tree_directory(doc->app, doc->app->workspace->path);
         return TRUE;

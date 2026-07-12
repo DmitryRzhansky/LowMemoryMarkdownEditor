@@ -36,13 +36,20 @@ autosave_timeout_cb(gpointer user_data)
 {
     LmmeDocument *doc = user_data;
     g_autoptr(GError) error = NULL;
+    LmmeDocumentSaveResult result;
 
     doc->autosave_id = 0;
-    if (lmme_document_save(doc, &error)) {
+    result = lmme_document_save(doc, &error);
+    if (result == LMME_DOCUMENT_SAVE_COMMITTED_DURABLE) {
         lmme_document_set_save_state(doc, LMME_SAVE_STATE_AUTOSAVED);
     } else {
-        lmme_document_set_save_state(doc, LMME_SAVE_STATE_ERROR);
-        lmme_window_set_status_error(doc->app, "Could not save file.");
+        if (result == LMME_DOCUMENT_SAVE_NOT_COMMITTED) {
+            lmme_document_set_save_state(doc, LMME_SAVE_STATE_ERROR);
+        }
+        lmme_window_set_status_error(doc->app,
+                                     result == LMME_DOCUMENT_SAVE_COMMITTED_NOT_DURABLE
+                                         ? "File was saved, but durability could not be confirmed."
+                                         : "Could not save file.");
     }
 
     return G_SOURCE_REMOVE;

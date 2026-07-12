@@ -220,13 +220,13 @@ lmme_tabs_open_recovery_entry(LmmeApp *app,
     return TRUE;
 }
 
-gboolean
+LmmeDocumentSaveResult
 lmme_tabs_save_document(LmmeDocument *doc, GError **error)
 {
     return lmme_document_save(doc, error);
 }
 
-gboolean
+LmmeDocumentSaveResult
 lmme_tabs_save_active(LmmeApp *app, GError **error)
 {
     return lmme_tabs_save_document(lmme_tabs_get_active(app), error);
@@ -263,7 +263,8 @@ prepare_document_close(LmmeDocument *doc)
         gboolean allow_retry = doc->disk_state == LMME_DISK_STATE_NORMAL;
         const char *detail = NULL;
 
-        if (allow_retry && lmme_document_save(doc, &save_error)) {
+        if (allow_retry &&
+            lmme_document_save(doc, &save_error) == LMME_DOCUMENT_SAVE_COMMITTED_DURABLE) {
             return TRUE;
         }
         if (!allow_retry) {

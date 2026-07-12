@@ -24,12 +24,20 @@ action_save(LmmeApp *app)
 {
     LmmeDocument *doc = lmme_tabs_get_active(app);
     g_autoptr(GError) error = NULL;
+    LmmeDocumentSaveResult result = LMME_DOCUMENT_SAVE_COMMITTED_DURABLE;
 
     if (doc != NULL && doc->disk_state != LMME_DISK_STATE_NORMAL) {
         (void)lmme_document_resolve_external_conflict(doc);
-    } else if (!lmme_tabs_save_active(app, &error)) {
+    } else {
+        result = lmme_tabs_save_active(app, &error);
+    }
+    if (result == LMME_DOCUMENT_SAVE_NOT_COMMITTED) {
         lmme_dialog_error(GTK_WINDOW(app->window),
                           "Could not save file.",
+                          error != NULL ? error->message : NULL);
+    } else if (result == LMME_DOCUMENT_SAVE_COMMITTED_NOT_DURABLE) {
+        lmme_dialog_error(GTK_WINDOW(app->window),
+                          "File was saved, but durability could not be confirmed.",
                           error != NULL ? error->message : NULL);
     }
     lmme_window_update_status(app);

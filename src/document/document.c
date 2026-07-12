@@ -4,11 +4,11 @@
 
 #include "app/app.h"
 #include "document/document_autosave.h"
+#include "document/document_persistence.h"
 #include "document/file_monitor.h"
 #include "document/recovery.h"
 #include "editor/editor.h"
 #include "features/image_insert.h"
-#include "infra/safe_write.h"
 #include "infra/util.h"
 #include "ui/window.h"
 #include "workspace/workspace.h"
@@ -296,110 +296,30 @@ lmme_document_mark_recovered(LmmeDocument *doc,
     lmme_document_set_save_state(doc, LMME_SAVE_STATE_MODIFIED);
 }
 
-gboolean
+LmmeDocumentSaveResult
 lmme_document_save(LmmeDocument *doc, GError **error)
 {
-    g_autofree char *text = NULL;
-
-    if (doc == NULL) {
-        return TRUE;
-    }
-    if (doc->disk_state != LMME_DISK_STATE_NORMAL) {
-        g_set_error_literal(error,
-                            G_FILE_ERROR,
-                            G_FILE_ERROR_AGAIN,
-                            "Resolve the external file conflict before saving.");
-        return FALSE;
-    }
-    if (doc->app->workspace != NULL &&
-        !lmme_workspace_validate_save_target(doc->app->workspace, doc->path, error)) {
-        return FALSE;
-    }
-
-    text = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
-    if (!lmme_safe_write_file_legacy(doc->path, text, strlen(text), error)) {
-        return FALSE;
-    }
-
-    if (!lmme_file_fingerprint_read(doc->path, &doc->expected_internal_fingerprint, error)) {
-        return FALSE;
-    }
-    doc->last_known_fingerprint = doc->expected_internal_fingerprint;
-    doc->base_fingerprint = doc->expected_internal_fingerprint;
-    doc->has_expected_internal_fingerprint = TRUE;
-    gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc->buffer), FALSE);
-    lmme_recovery_remove(doc->app->recovery_store, doc->path, NULL);
-    lmme_document_cancel_autosave(doc);
-    lmme_document_cancel_recovery(doc);
-    g_clear_pointer(&doc->recovery_source_path, g_free);
-    doc->restored_from_recovery = FALSE;
-    doc->disk_state = LMME_DISK_STATE_NORMAL;
-    lmme_document_set_save_state(doc, LMME_SAVE_STATE_SAVED);
-    return TRUE;
+    return lmme_document_persist(doc,
+                                 doc != NULL ? doc->path : NULL,
+                                 FALSE,
+                                 FALSE,
+                                 error);
 }
 
-gboolean
+LmmeDocumentSaveResult
 lmme_document_overwrite(LmmeDocument *doc, GError **error)
 {
-    LmmeDiskState previous_state = LMME_DISK_STATE_NORMAL;
-
-    if (doc == NULL) {
-        return TRUE;
-    }
-    previous_state = doc->disk_state;
-    doc->disk_state = LMME_DISK_STATE_NORMAL;
-    if (lmme_document_save(doc, error)) {
-        return TRUE;
-    }
-    doc->disk_state = previous_state;
-    return FALSE;
+    return lmme_document_persist(doc,
+                                 doc != NULL ? doc->path : NULL,
+                                 TRUE,
+                                 FALSE,
+                                 error);
 }
 
-gboolean
+LmmeDocumentSaveResult
 lmme_document_save_as(LmmeDocument *doc, const char *new_path, GError **error)
 {
-    g_autofree char *canonical_path = NULL;
-    g_autofree char *text = NULL;
-    g_autofree char *old_path = NULL;
-
-    if (doc == NULL || new_path == NULL || doc->app->workspace == NULL) {
-        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid Save As destination.");
-        return FALSE;
-    }
-    canonical_path = g_canonicalize_filename(new_path, NULL);
-    if (!lmme_workspace_validate_save_target(doc->app->workspace, canonical_path, error)) {
-        return FALSE;
-    }
-
-    text = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
-    if (!lmme_safe_write_file_legacy(canonical_path, text, strlen(text), error)) {
-        return FALSE;
-    }
-
-    old_path = g_strdup(doc->path);
-    lmme_document_file_monitor_detach(doc);
-    g_free(doc->path);
-    doc->path = g_steal_pointer(&canonical_path);
-    g_free(doc->relative_path);
-    doc->relative_path = lmme_path_relative_to(doc->app->workspace->path, doc->path);
-    doc->disk_state = LMME_DISK_STATE_NORMAL;
-    if (!lmme_file_fingerprint_read(doc->path, &doc->expected_internal_fingerprint, error)) {
-        lmme_document_file_monitor_attach(doc);
-        return FALSE;
-    }
-    doc->last_known_fingerprint = doc->expected_internal_fingerprint;
-    doc->base_fingerprint = doc->expected_internal_fingerprint;
-    doc->has_expected_internal_fingerprint = TRUE;
-    gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc->buffer), FALSE);
-    lmme_document_cancel_autosave(doc);
-    lmme_document_cancel_recovery(doc);
-    lmme_recovery_remove(doc->app->recovery_store, old_path, NULL);
-    g_clear_pointer(&doc->recovery_source_path, g_free);
-    doc->restored_from_recovery = FALSE;
-    lmme_document_set_save_state(doc, LMME_SAVE_STATE_SAVED);
-    lmme_document_file_monitor_attach(doc);
-    lmme_document_refresh_title(doc);
-    return TRUE;
+    return lmme_document_persist(doc, new_path, TRUE, TRUE, error);
 }
 
 void
