@@ -1,4 +1,5 @@
 #include "document/tabs.h"
+#include "document/tabs_test.h"
 
 #include "app/app.h"
 #include "document/document_autosave.h"
@@ -291,6 +292,94 @@ prepare_document_close(LmmeDocument *doc)
     }
 }
 
+gboolean
+lmme_tabs_test_prepare_documents(GPtrArray *documents,
+                                 LmmeTabsTestPrepareFunc prepare,
+                                 gpointer user_data)
+{
+    if (documents == NULL || prepare == NULL) {
+        return FALSE;
+    }
+    for (guint i = 0; i < documents->len; i++) {
+        if (!prepare(g_ptr_array_index(documents, i), user_data)) {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+static gboolean
+prepare_document_close_adapter(LmmeDocument *doc, gpointer user_data)
+{
+    (void)user_data;
+    return prepare_document_close(doc);
+}
+
+static LmmeDocument *
+document_for_notebook_page(LmmeApp *app, int page)
+{
+    GtkWidget *child = gtk_notebook_get_nth_page(GTK_NOTEBOOK(app->notebook), page);
+
+    if (child == NULL) {
+        return NULL;
+    }
+    for (guint i = 0; i < app->documents->len; i++) {
+        LmmeDocument *doc = g_ptr_array_index(app->documents, i);
+        if (doc->scroller == child) {
+            return doc;
+        }
+    }
+    return NULL;
+}
+
+static GPtrArray *
+snapshot_notebook_range(LmmeApp *app,
+                        int first_page,
+                        int last_page,
+                        LmmeDocument *excluded)
+{
+    GPtrArray *documents = g_ptr_array_new();
+
+    for (int page = first_page; page <= last_page; page++) {
+        LmmeDocument *doc = document_for_notebook_page(app, page);
+        if (doc != NULL && doc != excluded) {
+            g_ptr_array_add(documents, doc);
+        }
+    }
+    return documents;
+}
+
+static gboolean
+close_document_snapshot(LmmeApp *app,
+                        GPtrArray *documents,
+                        LmmeDocument *anchor)
+{
+    if (!lmme_tabs_test_prepare_documents(documents,
+                                          prepare_document_close_adapter,
+                                          NULL)) {
+        return FALSE;
+    }
+
+    for (guint i = 0; i < documents->len; i++) {
+        LmmeDocument *doc = g_ptr_array_index(documents, i);
+        int page = gtk_notebook_page_num(GTK_NOTEBOOK(app->notebook), doc->scroller);
+        if (page >= 0) {
+            gtk_notebook_remove_page(GTK_NOTEBOOK(app->notebook), page);
+        }
+        remove_document(app, doc);
+    }
+
+    if (anchor != NULL) {
+        int anchor_page = gtk_notebook_page_num(GTK_NOTEBOOK(app->notebook), anchor->scroller);
+        if (anchor_page >= 0) {
+            gtk_notebook_set_current_page(GTK_NOTEBOOK(app->notebook), anchor_page);
+        }
+    }
+    lmme_window_update_status(app);
+    lmme_window_schedule_preview(app);
+    return TRUE;
+}
+
 void
 lmme_tabs_close_active(LmmeApp *app)
 {
@@ -339,6 +428,7 @@ lmme_tabs_close_tabs_to_right(LmmeApp *app, LmmeDocument *anchor)
 {
     GtkNotebook *notebook = NULL;
     int anchor_page = -1;
+    g_autoptr(GPtrArray) documents = NULL;
 
     if (app == NULL || anchor == NULL || app->notebook == NULL || app->documents == NULL) {
         return FALSE;
@@ -350,22 +440,11 @@ lmme_tabs_close_tabs_to_right(LmmeApp *app, LmmeDocument *anchor)
         return FALSE;
     }
 
-    while (gtk_notebook_get_n_pages(notebook) > anchor_page + 1) {
-        guint before = app->documents->len;
-        gtk_notebook_set_current_page(notebook, anchor_page + 1);
-        lmme_tabs_close_active(app);
-        if (app->documents->len == before) {
-            return FALSE;
-        }
-
-        anchor_page = gtk_notebook_page_num(notebook, anchor->scroller);
-        if (anchor_page < 0) {
-            return FALSE;
-        }
-    }
-
-    gtk_notebook_set_current_page(notebook, anchor_page);
-    return TRUE;
+    documents = snapshot_notebook_range(app,
+                                        anchor_page + 1,
+                                        gtk_notebook_get_n_pages(notebook) - 1,
+                                        NULL);
+    return close_document_snapshot(app, documents, anchor);
 }
 
 gboolean
@@ -373,6 +452,7 @@ lmme_tabs_close_tabs_to_left(LmmeApp *app, LmmeDocument *anchor)
 {
     GtkNotebook *notebook = NULL;
     int anchor_page = -1;
+    g_autoptr(GPtrArray) documents = NULL;
 
     if (app == NULL || anchor == NULL || app->notebook == NULL || app->documents == NULL) {
         return FALSE;
@@ -384,22 +464,8 @@ lmme_tabs_close_tabs_to_left(LmmeApp *app, LmmeDocument *anchor)
         return FALSE;
     }
 
-    while (anchor_page > 0) {
-        guint before = app->documents->len;
-        gtk_notebook_set_current_page(notebook, 0);
-        lmme_tabs_close_active(app);
-        if (app->documents->len == before) {
-            return FALSE;
-        }
-
-        anchor_page = gtk_notebook_page_num(notebook, anchor->scroller);
-        if (anchor_page < 0) {
-            return FALSE;
-        }
-    }
-
-    gtk_notebook_set_current_page(notebook, anchor_page);
-    return TRUE;
+    documents = snapshot_notebook_range(app, 0, anchor_page - 1, NULL);
+    return close_document_snapshot(app, documents, anchor);
 }
 
 gboolean
@@ -407,34 +473,36 @@ lmme_tabs_close_other_tabs(LmmeApp *app, LmmeDocument *anchor)
 {
     GtkNotebook *notebook = NULL;
     int anchor_page = -1;
+    g_autoptr(GPtrArray) documents = NULL;
 
     if (app == NULL || anchor == NULL || app->notebook == NULL || app->documents == NULL) {
         return FALSE;
     }
-    if (!lmme_tabs_close_tabs_to_right(app, anchor) || !lmme_tabs_close_tabs_to_left(app, anchor)) {
-        return FALSE;
-    }
-
     notebook = GTK_NOTEBOOK(app->notebook);
     anchor_page = gtk_notebook_page_num(notebook, anchor->scroller);
-    if (anchor_page >= 0) {
-        gtk_notebook_set_current_page(notebook, anchor_page);
+    if (anchor_page < 0) {
+        return FALSE;
     }
-    return TRUE;
+    documents = snapshot_notebook_range(app,
+                                        0,
+                                        gtk_notebook_get_n_pages(notebook) - 1,
+                                        anchor);
+    return close_document_snapshot(app, documents, anchor);
 }
 
 gboolean
 lmme_tabs_close_all(LmmeApp *app)
 {
-    while (app->documents->len > 0) {
-        guint before = app->documents->len;
-        gtk_notebook_set_current_page(GTK_NOTEBOOK(app->notebook), 0);
-        lmme_tabs_close_active(app);
-        if (app->documents->len == before) {
-            return FALSE;
-        }
+    g_autoptr(GPtrArray) documents = NULL;
+
+    if (app == NULL || app->notebook == NULL || app->documents == NULL) {
+        return FALSE;
     }
-    return TRUE;
+    documents = snapshot_notebook_range(app,
+                                        0,
+                                        gtk_notebook_get_n_pages(GTK_NOTEBOOK(app->notebook)) - 1,
+                                        NULL);
+    return close_document_snapshot(app, documents, NULL);
 }
 
 gboolean
@@ -443,12 +511,9 @@ lmme_tabs_prepare_close_all(LmmeApp *app)
     if (app == NULL || app->documents == NULL) {
         return TRUE;
     }
-    for (guint i = 0; i < app->documents->len; i++) {
-        if (!prepare_document_close(g_ptr_array_index(app->documents, i))) {
-            return FALSE;
-        }
-    }
-    return TRUE;
+    return lmme_tabs_test_prepare_documents(app->documents,
+                                            prepare_document_close_adapter,
+                                            NULL);
 }
 
 void

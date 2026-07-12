@@ -6,6 +6,7 @@
 #include "document/document.h"
 #include "document/document_autosave.h"
 #include "document/recovery.h"
+#include "document/tabs_test.h"
 #include "editor/preview.h"
 #include "infra/safe_write_test.h"
 #include "workspace/workspace.h"
@@ -76,6 +77,48 @@ test_conflict_blocks_autosave(void)
     doc.disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
     lmme_document_schedule_autosave(&doc);
     g_assert_cmpuint(doc.autosave_id, ==, 0);
+}
+
+typedef struct {
+    guint calls;
+    guint cancel_on_call;
+} PrepareCloseState;
+
+static gboolean
+prepare_close_for_test(LmmeDocument *doc, gpointer user_data)
+{
+    PrepareCloseState *state = user_data;
+    (void)doc;
+
+    state->calls++;
+    return state->calls != state->cancel_on_call;
+}
+
+static void
+test_bulk_close_prepare_is_all_or_nothing(void)
+{
+    LmmeDocument first = {0};
+    LmmeDocument second = {0};
+    LmmeDocument third = {0};
+    g_autoptr(GPtrArray) documents = g_ptr_array_new();
+    PrepareCloseState state = {0};
+
+    g_ptr_array_add(documents, &first);
+    g_ptr_array_add(documents, &second);
+    g_ptr_array_add(documents, &third);
+    state.cancel_on_call = 2;
+    g_assert_false(lmme_tabs_test_prepare_documents(documents,
+                                                    prepare_close_for_test,
+                                                    &state));
+    g_assert_cmpuint(state.calls, ==, 2);
+    g_assert_cmpuint(documents->len, ==, 3);
+
+    state = (PrepareCloseState){0};
+    g_assert_true(lmme_tabs_test_prepare_documents(documents,
+                                                   prepare_close_for_test,
+                                                   &state));
+    g_assert_cmpuint(state.calls, ==, 3);
+    g_assert_cmpuint(documents->len, ==, 3);
 }
 
 static void
@@ -359,6 +402,7 @@ main(int argc, char **argv)
     g_test_add_func("/document/save-as/uncertain", test_save_as_uncertain_commit_switches_path_with_recovery);
     g_test_add_func("/document/overwrite/explicit-policy", test_overwrite_uses_explicit_conflict_policy);
     g_test_add_func("/document/conflict-blocks-autosave", test_conflict_blocks_autosave);
+    g_test_add_func("/document/bulk-close/two-phase", test_bulk_close_prepare_is_all_or_nothing);
     g_test_add_func("/document/preview-cursor-incremental", test_cursor_preview_update_does_not_full_parse);
     return g_test_run();
 }
