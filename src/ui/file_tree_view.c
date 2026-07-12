@@ -30,6 +30,7 @@ typedef struct {
     GHashTable *child_stores;
     GHashTable *directory_monitors;
     GHashTable *dirty_directories;
+    GHashTable *refresh_counts;
     guint monitor_timeout_id;
     gboolean use_test_monitors;
 } LmmeFileTreeState;
@@ -184,6 +185,7 @@ file_tree_state_free(LmmeFileTreeState *state)
     g_clear_pointer(&state->child_stores, g_hash_table_unref);
     g_clear_pointer(&state->directory_monitors, g_hash_table_unref);
     g_clear_pointer(&state->dirty_directories, g_hash_table_unref);
+    g_clear_pointer(&state->refresh_counts, g_hash_table_unref);
     g_free(state);
 }
 
@@ -471,6 +473,17 @@ refresh_directory_state(LmmeFileTreeState *state,
                                           error)) {
         return FALSE;
     }
+    if (state->refresh_counts != NULL) {
+        guint *count = g_hash_table_lookup(state->refresh_counts, directory_path);
+
+        if (count == NULL) {
+            guint *initial = g_new(guint, 1);
+            *initial = 1;
+            g_hash_table_insert(state->refresh_counts, g_strdup(directory_path), initial);
+        } else {
+            (*count)++;
+        }
+    }
     node = lmme_workspace_find_node(state->workspace, directory_path);
     store = g_hash_table_lookup(state->child_stores, directory_path);
     if (node != NULL && store != NULL) {
@@ -708,6 +721,7 @@ lmme_file_tree_test_model_new(LmmeApp *app,
                                                       g_free,
                                                       g_object_unref);
     state->dirty_directories = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    state->refresh_counts = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
     state->roots = g_list_store_new(LMME_TYPE_TREE_ITEM);
     g_autoptr(LmmeTreeItem) root_item = tree_item_new(workspace->root);
     g_list_store_append(state->roots, root_item);
@@ -719,6 +733,24 @@ lmme_file_tree_test_model_new(LmmeApp *app,
                                                 NULL);
     ensure_directory_monitor(state, workspace->root->path);
     return model;
+}
+
+static gboolean
+file_tree_test_has_monitor(LmmeFileTreeState *state, const char *path)
+{
+    return state != NULL && path != NULL && g_hash_table_contains(state->directory_monitors, path);
+}
+
+static guint
+file_tree_test_refresh_count(LmmeFileTreeState *state, const char *path)
+{
+    guint *count = NULL;
+
+    if (state == NULL || path == NULL || state->refresh_counts == NULL) {
+        return 0;
+    }
+    count = g_hash_table_lookup(state->refresh_counts, path);
+    return count != NULL ? *count : 0;
 }
 
 void
@@ -852,4 +884,16 @@ char *
 lmme_file_tree_test_dup_item_path(GObject *item)
 {
     return LMME_IS_TREE_ITEM(item) ? g_strdup(LMME_TREE_ITEM(item)->path) : NULL;
+}
+
+gboolean
+lmme_file_tree_test_has_monitor(LmmeFileTreeTestModel *model, const char *path)
+{
+    return file_tree_test_has_monitor(model != NULL ? model->state : NULL, path);
+}
+
+guint
+lmme_file_tree_test_refresh_count(LmmeFileTreeTestModel *model, const char *path)
+{
+    return file_tree_test_refresh_count(model != NULL ? model->state : NULL, path);
 }

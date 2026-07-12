@@ -24,5 +24,7 @@ GObject *lmme_file_tree_test_ref_item(LmmeFileTreeTestModel *model, const char *
 GListStore *lmme_file_tree_test_ref_child_store(LmmeFileTreeTestModel *model, const char *path);
 GListModel *lmme_file_tree_test_create_child_model(LmmeFileTreeTestModel *model, GObject *item);
 char *lmme_file_tree_test_dup_item_path(GObject *item);
+gboolean lmme_file_tree_test_has_monitor(LmmeFileTreeTestModel *model, const char *path);
+guint lmme_file_tree_test_refresh_count(LmmeFileTreeTestModel *model, const char *path);
 
 #endif
