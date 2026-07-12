@@ -350,15 +350,18 @@ snapshot_notebook_range(LmmeApp *app,
 }
 
 static gboolean
-close_document_snapshot(LmmeApp *app,
-                        GPtrArray *documents,
-                        LmmeDocument *anchor)
+prepare_document_snapshot(GPtrArray *documents)
 {
-    if (!lmme_tabs_test_prepare_documents(documents,
-                                          prepare_document_close_adapter,
-                                          NULL)) {
-        return FALSE;
-    }
+    return lmme_tabs_test_prepare_documents(documents,
+                                            prepare_document_close_adapter,
+                                            NULL);
+}
+
+static void
+commit_document_snapshot(LmmeApp *app,
+                         GPtrArray *documents,
+                         LmmeDocument *anchor)
+{
 
     for (guint i = 0; i < documents->len; i++) {
         LmmeDocument *doc = g_ptr_array_index(documents, i);
@@ -377,6 +380,17 @@ close_document_snapshot(LmmeApp *app,
     }
     lmme_window_update_status(app);
     lmme_window_schedule_preview(app);
+}
+
+static gboolean
+close_document_snapshot(LmmeApp *app,
+                        GPtrArray *documents,
+                        LmmeDocument *anchor)
+{
+    if (!prepare_document_snapshot(documents)) {
+        return FALSE;
+    }
+    commit_document_snapshot(app, documents, anchor);
     return TRUE;
 }
 
@@ -511,9 +525,22 @@ lmme_tabs_prepare_close_all(LmmeApp *app)
     if (app == NULL || app->documents == NULL) {
         return TRUE;
     }
-    return lmme_tabs_test_prepare_documents(app->documents,
-                                            prepare_document_close_adapter,
-                                            NULL);
+    return prepare_document_snapshot(app->documents);
+}
+
+void
+lmme_tabs_commit_close_all(LmmeApp *app)
+{
+    g_autoptr(GPtrArray) documents = NULL;
+
+    if (app == NULL || app->notebook == NULL || app->documents == NULL) {
+        return;
+    }
+    documents = snapshot_notebook_range(app,
+                                        0,
+                                        gtk_notebook_get_n_pages(GTK_NOTEBOOK(app->notebook)) - 1,
+                                        NULL);
+    commit_document_snapshot(app, documents, NULL);
 }
 
 void

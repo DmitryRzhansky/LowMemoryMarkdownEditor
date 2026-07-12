@@ -207,6 +207,31 @@ test_large_workspace_is_loaded_lazily(void)
     g_rmdir(root);
 }
 
+static void
+test_scanned_workspace_candidate_is_committed_only_on_success(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-workspace-candidate-XXXXXX", NULL);
+    g_autofree char *missing = g_build_filename(root, "missing", NULL);
+    g_autoptr(GError) error = NULL;
+    LmmeWorkspace *current = lmme_workspace_new(root);
+    LmmeWorkspace *candidate = lmme_workspace_new_scanned(missing, TRUE, TRUE, &error);
+
+    g_assert_null(candidate);
+    g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_NOENT);
+    g_assert_cmpstr(current->path, ==, root);
+    g_clear_error(&error);
+
+    candidate = lmme_workspace_new_scanned(root, TRUE, TRUE, &error);
+    g_assert_nonnull(candidate);
+    g_assert_no_error(error);
+    g_assert_nonnull(candidate->root);
+    g_assert_cmpstr(current->path, ==, root);
+
+    lmme_workspace_free(candidate);
+    lmme_workspace_free(current);
+    g_rmdir(root);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -217,5 +242,6 @@ main(int argc, char **argv)
     g_test_add_func("/workspace/rename/committed", test_rename_is_committed_before_result);
     g_test_add_func("/workspace/save-target/containment", test_save_target_containment);
     g_test_add_func("/workspace/lazy/ten-thousand-files", test_large_workspace_is_loaded_lazily);
+    g_test_add_func("/workspace/candidate/transactional", test_scanned_workspace_candidate_is_committed_only_on_success);
     return g_test_run();
 }

@@ -24,6 +24,7 @@ gboolean lmme_tabs_close_tabs_to_left(LmmeApp *app, LmmeDocument *anchor);
 gboolean lmme_tabs_close_other_tabs(LmmeApp *app, LmmeDocument *anchor);
 gboolean lmme_tabs_close_all(LmmeApp *app);
 gboolean lmme_tabs_prepare_close_all(LmmeApp *app);
+void lmme_tabs_commit_close_all(LmmeApp *app);
 void lmme_tabs_resume_pending_saves(LmmeApp *app);
 GPtrArray *lmme_tabs_find_in_subtree(LmmeApp *app, const char *root);
 void lmme_tabs_forget_subtree(LmmeApp *app, const char *root);

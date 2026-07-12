@@ -82,6 +82,26 @@ lmme_workspace_new(const char *path)
     return workspace;
 }
 
+LmmeWorkspace *
+lmme_workspace_new_scanned(const char *path,
+                           gboolean show_hidden_files,
+                           gboolean show_images,
+                           GError **error)
+{
+    LmmeWorkspace *workspace = NULL;
+
+    if (path == NULL || path[0] == '\0') {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid workspace path.");
+        return NULL;
+    }
+    workspace = lmme_workspace_new(path);
+    if (!lmme_workspace_rescan(workspace, show_hidden_files, show_images, error)) {
+        lmme_workspace_free(workspace);
+        return NULL;
+    }
+    return workspace;
+}
+
 void
 lmme_workspace_free(LmmeWorkspace *workspace)
 {

@@ -20,6 +20,10 @@ typedef struct _LmmeWorkspace {
 } LmmeWorkspace;
 
 LmmeWorkspace *lmme_workspace_new(const char *path);
+LmmeWorkspace *lmme_workspace_new_scanned(const char *path,
+                                          gboolean show_hidden_files,
+                                          gboolean show_images,
+                                          GError **error);
 void lmme_workspace_free(LmmeWorkspace *workspace);
 gboolean lmme_workspace_rescan(LmmeWorkspace *workspace,
                                gboolean show_hidden_files,

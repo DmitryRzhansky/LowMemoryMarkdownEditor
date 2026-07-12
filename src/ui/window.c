@@ -221,16 +221,22 @@ gboolean
 lmme_window_open_workspace_path(LmmeApp *app, const char *path)
 {
     g_autoptr(GError) error = NULL;
-    LmmeWorkspace *workspace = lmme_workspace_new(path);
+    LmmeWorkspace *workspace = lmme_workspace_new_scanned(path,
+                                                          app->config.show_hidden_files,
+                                                          app->config.show_images,
+                                                          &error);
 
-    if (app->documents != NULL && app->documents->len > 0 && !lmme_tabs_close_all(app)) {
+    if (workspace == NULL) {
+        lmme_dialog_error(GTK_WINDOW(app->window), "Could not open workspace.", error != NULL ? error->message : NULL);
+        return FALSE;
+    }
+    if (app->documents != NULL && app->documents->len > 0 &&
+        !lmme_tabs_prepare_close_all(app)) {
         lmme_workspace_free(workspace);
         return FALSE;
     }
-    if (!lmme_workspace_rescan(workspace, app->config.show_hidden_files, app->config.show_images, &error)) {
-        lmme_workspace_free(workspace);
-        lmme_dialog_error(GTK_WINDOW(app->window), "Could not open workspace.", error != NULL ? error->message : NULL);
-        return FALSE;
+    if (app->documents != NULL && app->documents->len > 0) {
+        lmme_tabs_commit_close_all(app);
     }
 
     lmme_file_tree_populate(app->tree_view,
