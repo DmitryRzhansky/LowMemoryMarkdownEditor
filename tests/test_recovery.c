@@ -62,6 +62,33 @@ write_version_1_metadata(const char *cache,
 }
 
 static void
+write_version_2_metadata(const char *cache,
+                         const char *original,
+                         const char *workspace,
+                         const char *recovery_name,
+                         gint version)
+{
+    g_autofree char *hash = lmme_hash_path(original);
+    g_autofree char *metadata_name = g_strdup_printf("%s.meta", hash);
+    g_autofree char *metadata_path = g_build_filename(cache, metadata_name, NULL);
+    g_autoptr(GKeyFile) metadata = g_key_file_new();
+    LmmeFileFingerprint fingerprint = {0};
+
+    g_assert_true(lmme_file_fingerprint_read(original, &fingerprint, NULL));
+    g_key_file_set_integer(metadata, "recovery", "version", version);
+    g_key_file_set_string(metadata, "recovery", "original_path", original);
+    g_key_file_set_string(metadata, "recovery", "workspace_path", workspace);
+    g_key_file_set_string(metadata, "recovery", "recovery_file", recovery_name);
+    g_key_file_set_int64(metadata, "recovery", "created_us", 1);
+    g_key_file_set_boolean(metadata, "original", "exists", fingerprint.exists);
+    g_key_file_set_uint64(metadata, "original", "size", fingerprint.size);
+    g_key_file_set_int64(metadata, "original", "mtime_ns", fingerprint.mtime_ns);
+    g_key_file_set_uint64(metadata, "original", "inode", fingerprint.inode);
+    g_key_file_set_uint64(metadata, "original", "device", fingerprint.device);
+    g_assert_true(g_key_file_save_to_file(metadata, metadata_path, NULL));
+}
+
+static void
 test_recovery_roundtrip(void)
 {
     g_autofree char *root = g_dir_make_tmp("lmme-test-recovery-XXXXXX", NULL);
@@ -210,6 +237,120 @@ test_recovery_update_faults_preserve_usable_data(void)
 }
 
 static void
+test_version_2_writer_preserves_previous_generation_field(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-recovery-v2-format-XXXXXX", NULL);
+    g_autofree char *cache = g_build_filename(root, "cache", NULL);
+    g_autofree char *original = g_build_filename(root, "note.md", NULL);
+    g_autofree char *hash = lmme_hash_path(original);
+    g_autofree char *metadata_name = g_strdup_printf("%s.meta", hash);
+    g_autofree char *metadata_path = g_build_filename(cache, metadata_name, NULL);
+    g_autofree char *old_path = NULL;
+    g_autofree char *old_name = NULL;
+    g_autofree char *active_name = NULL;
+    g_autofree char *previous_name = NULL;
+    g_autofree char *active_path = NULL;
+    g_autoptr(GKeyFile) metadata = g_key_file_new();
+    LmmeRecoveryStore *store = lmme_recovery_store_new(cache);
+
+    g_assert_true(g_file_set_contents(original, "disk", -1, NULL));
+    g_assert_true(lmme_recovery_write(store, original, root, NULL, "first", 5, NULL));
+    old_path = lmme_recovery_path_for_original(store, original);
+    old_name = g_path_get_basename(old_path);
+
+    g_assert_true(lmme_recovery_write(store, original, root, NULL, "second", 6, NULL));
+    g_assert_true(g_key_file_load_from_file(metadata, metadata_path, G_KEY_FILE_NONE, NULL));
+    g_assert_cmpint(g_key_file_get_integer(metadata, "recovery", "version", NULL), ==, 2);
+    active_name = g_key_file_get_string(metadata, "recovery", "recovery_file", NULL);
+    previous_name = g_key_file_get_string(metadata,
+                                          "recovery",
+                                          "previous_recovery_file",
+                                          NULL);
+    g_assert_nonnull(active_name);
+    g_assert_cmpstr(previous_name, ==, old_name);
+    g_assert_cmpstr(active_name, !=, previous_name);
+    active_path = g_build_filename(cache, active_name, NULL);
+    g_assert_true(g_file_test(active_path, G_FILE_TEST_IS_REGULAR));
+    g_assert_false(g_file_test(old_path, G_FILE_TEST_EXISTS));
+
+    lmme_recovery_store_free(store);
+    remove_directory_contents(cache);
+    g_rmdir(cache);
+    g_unlink(original);
+    g_rmdir(root);
+}
+
+static void
+test_listing_preserves_unreferenced_generations(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-recovery-listing-XXXXXX", NULL);
+    g_autofree char *cache = g_build_filename(root, "cache", NULL);
+    g_autofree char *missing_meta_original = g_build_filename(root, "missing-meta.md", NULL);
+    g_autofree char *corrupt_meta_original = g_build_filename(root, "corrupt-meta.md", NULL);
+    g_autofree char *invalid_version_original = g_build_filename(root, "invalid-version.md", NULL);
+    g_autofree char *missing_payload_original = g_build_filename(root, "missing-payload.md", NULL);
+    g_autofree char *missing_meta_hash = lmme_hash_path(missing_meta_original);
+    g_autofree char *corrupt_meta_hash = lmme_hash_path(corrupt_meta_original);
+    g_autofree char *invalid_version_hash = lmme_hash_path(invalid_version_original);
+    g_autofree char *missing_payload_hash = lmme_hash_path(missing_payload_original);
+    g_autofree char *missing_meta_name = g_strdup_printf("%s-missing-meta.recover", missing_meta_hash);
+    g_autofree char *corrupt_meta_name = g_strdup_printf("%s-corrupt-meta.recover", corrupt_meta_hash);
+    g_autofree char *invalid_version_name = g_strdup_printf("%s-invalid-version.recover", invalid_version_hash);
+    g_autofree char *missing_payload_name = g_strdup_printf("%s-missing-payload.recover", missing_payload_hash);
+    g_autofree char *adjacent_name = g_strdup_printf("%s-unreferenced.recover", missing_payload_hash);
+    g_autofree char *missing_meta_path = g_build_filename(cache, missing_meta_name, NULL);
+    g_autofree char *corrupt_meta_path = g_build_filename(cache, corrupt_meta_name, NULL);
+    g_autofree char *invalid_version_path = g_build_filename(cache, invalid_version_name, NULL);
+    g_autofree char *adjacent_path = g_build_filename(cache, adjacent_name, NULL);
+    g_autofree char *corrupt_metadata_name = g_strdup_printf("%s.meta", corrupt_meta_hash);
+    g_autofree char *corrupt_metadata_path = g_build_filename(cache, corrupt_metadata_name, NULL);
+    g_autoptr(GPtrArray) entries = NULL;
+    LmmeRecoveryStore *store = NULL;
+
+    g_assert_cmpint(g_mkdir(cache, 0700), ==, 0);
+    g_assert_true(g_file_set_contents(missing_meta_original, "disk", -1, NULL));
+    g_assert_true(g_file_set_contents(corrupt_meta_original, "disk", -1, NULL));
+    g_assert_true(g_file_set_contents(invalid_version_original, "disk", -1, NULL));
+    g_assert_true(g_file_set_contents(missing_payload_original, "disk", -1, NULL));
+    g_assert_true(g_file_set_contents(missing_meta_path, "missing metadata", -1, NULL));
+    g_assert_true(g_file_set_contents(corrupt_meta_path, "corrupt metadata", -1, NULL));
+    g_assert_true(g_file_set_contents(invalid_version_path, "invalid version", -1, NULL));
+    g_assert_true(g_file_set_contents(adjacent_path, "adjacent generation", -1, NULL));
+    g_assert_true(g_file_set_contents(corrupt_metadata_path, "[recovery\nversion=2", -1, NULL));
+    write_version_2_metadata(cache,
+                             invalid_version_original,
+                             root,
+                             invalid_version_name,
+                             99);
+    write_version_2_metadata(cache,
+                             missing_payload_original,
+                             root,
+                             missing_payload_name,
+                             2);
+    store = lmme_recovery_store_new(cache);
+
+    entries = lmme_recovery_list(store, NULL);
+    g_assert_nonnull(entries);
+    g_assert_cmpuint(entries->len, ==, 0);
+    g_assert_true(g_file_test(missing_meta_path, G_FILE_TEST_IS_REGULAR));
+    g_assert_true(g_file_test(corrupt_meta_path, G_FILE_TEST_IS_REGULAR));
+    g_assert_true(g_file_test(invalid_version_path, G_FILE_TEST_IS_REGULAR));
+    g_assert_true(g_file_test(adjacent_path, G_FILE_TEST_IS_REGULAR));
+
+    g_assert_true(lmme_recovery_remove(store, missing_meta_original, NULL));
+    g_assert_false(g_file_test(missing_meta_path, G_FILE_TEST_EXISTS));
+
+    lmme_recovery_store_free(store);
+    remove_directory_contents(cache);
+    g_rmdir(cache);
+    g_unlink(missing_meta_original);
+    g_unlink(corrupt_meta_original);
+    g_unlink(invalid_version_original);
+    g_unlink(missing_payload_original);
+    g_rmdir(root);
+}
+
+static void
 test_original_change_is_detected(void)
 {
     g_autofree char *root = g_dir_make_tmp("lmme-test-recovery-XXXXXX", NULL);
@@ -290,7 +431,7 @@ test_legacy_and_corrupt_metadata(void)
     LmmeRecoveryEntry *entry = g_ptr_array_index(entries, 0);
     g_assert_true(entry->legacy);
     g_assert_cmpstr(entry->original_path, ==, original);
-    g_assert_false(g_file_test(orphan_path, G_FILE_TEST_EXISTS));
+    g_assert_true(g_file_test(orphan_path, G_FILE_TEST_IS_REGULAR));
 
     lmme_recovery_store_free(store);
     remove_directory_contents(cache);
@@ -305,6 +446,10 @@ main(int argc, char **argv)
     g_test_add_func("/recovery/roundtrip", test_recovery_roundtrip);
     g_test_add_func("/recovery/version-1-migration", test_version_1_metadata_is_loaded_and_migrated);
     g_test_add_func("/recovery/update-faults", test_recovery_update_faults_preserve_usable_data);
+    g_test_add_func("/recovery/version-2-writer-format",
+                    test_version_2_writer_preserves_previous_generation_field);
+    g_test_add_func("/recovery/listing-preserves-unreferenced",
+                    test_listing_preserves_unreferenced_generations);
     g_test_add_func("/recovery/original-change", test_original_change_is_detected);
     g_test_add_func("/recovery/missing-workspace-filter", test_missing_original_and_workspace_filter);
     g_test_add_func("/recovery/legacy-corrupt", test_legacy_and_corrupt_metadata);

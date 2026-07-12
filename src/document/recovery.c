@@ -38,12 +38,10 @@ static char *fixed_recovery_path_for_original(const LmmeRecoveryStore *store,
 static gboolean append_metadata_entries(LmmeRecoveryStore *store,
                                         GPtrArray *entries,
                                         GHashTable *seen_hashes,
-                                        GHashTable *active_names,
                                         GError **error);
 static void append_legacy_entries(LmmeRecoveryStore *store,
                                   GPtrArray *entries,
-                                  GHashTable *seen_hashes,
-                                  GHashTable *active_names);
+                                  GHashTable *seen_hashes);
 
 LmmeRecoveryStore *
 lmme_recovery_store_new(const char *directory)
@@ -418,9 +416,7 @@ regular_file_without_following_symlink(const char *path)
 static gboolean
 load_metadata_entry(LmmeRecoveryStore *store,
                     const char *name,
-                    LmmeRecoveryEntry **out_entry,
-                    char **out_recovery_name,
-                    char **out_previous_name)
+                    LmmeRecoveryEntry **out_entry)
 {
     g_autofree char *metadata_path = g_build_filename(store->directory, name, NULL);
     g_autoptr(GKeyFile) metadata = g_key_file_new();
@@ -491,8 +487,6 @@ load_metadata_entry(LmmeRecoveryStore *store,
     }
 
     entry->recovery_path = g_steal_pointer(&recovery_path);
-    *out_recovery_name = g_steal_pointer(&recovery_name);
-    *out_previous_name = g_steal_pointer(&previous_name);
     *out_entry = entry;
     return TRUE;
 }
@@ -501,7 +495,6 @@ static gboolean
 append_metadata_entries(LmmeRecoveryStore *store,
                         GPtrArray *entries,
                         GHashTable *seen_hashes,
-                        GHashTable *active_names,
                         GError **error)
 {
     g_autoptr(GDir) directory = g_dir_open(store->directory, 0, error);
@@ -513,23 +506,13 @@ append_metadata_entries(LmmeRecoveryStore *store,
     while ((name = g_dir_read_name(directory)) != NULL) {
         LmmeRecoveryEntry *entry = NULL;
         g_autofree char *hash = NULL;
-        g_autofree char *recovery_name = NULL;
-        g_autofree char *previous_name = NULL;
 
         if (!g_str_has_suffix(name, ".meta") ||
-            !load_metadata_entry(store,
-                                 name,
-                                 &entry,
-                                 &recovery_name,
-                                 &previous_name)) {
+            !load_metadata_entry(store, name, &entry)) {
             continue;
         }
         hash = g_strndup(name, strlen(name) - strlen(".meta"));
         g_hash_table_add(seen_hashes, g_steal_pointer(&hash));
-        g_hash_table_add(active_names, g_steal_pointer(&recovery_name));
-        if (previous_name != NULL) {
-            g_hash_table_add(active_names, g_steal_pointer(&previous_name));
-        }
         g_ptr_array_add(entries, entry);
     }
     return TRUE;
@@ -538,8 +521,7 @@ append_metadata_entries(LmmeRecoveryStore *store,
 static void
 append_legacy_entries(LmmeRecoveryStore *store,
                       GPtrArray *entries,
-                      GHashTable *seen_hashes,
-                      GHashTable *active_names)
+                      GHashTable *seen_hashes)
 {
     g_autoptr(GDir) directory = g_dir_open(store->directory, 0, NULL);
     const char *name = NULL;
@@ -577,37 +559,7 @@ append_legacy_entries(LmmeRecoveryStore *store,
         entry->workspace_path = g_strdup("");
         entry->recovery_path = g_steal_pointer(&recovery_path);
         entry->legacy = TRUE;
-        g_hash_table_add(active_names, g_steal_pointer(&recovery_name));
         g_ptr_array_add(entries, entry);
-    }
-}
-
-static gboolean
-looks_like_generation_name(const char *name)
-{
-    if (name == NULL || strlen(name) <= 64 || name[64] != '-' ||
-        !g_str_has_suffix(name, ".recover")) {
-        return FALSE;
-    }
-    for (guint i = 0; i < 64; i++) {
-        if (!g_ascii_isxdigit(name[i])) {
-            return FALSE;
-        }
-    }
-    return TRUE;
-}
-
-static void
-cleanup_orphan_generations(LmmeRecoveryStore *store, GHashTable *active_names)
-{
-    g_autoptr(GDir) directory = g_dir_open(store->directory, 0, NULL);
-    const char *name = NULL;
-
-    while (directory != NULL && (name = g_dir_read_name(directory)) != NULL) {
-        if (looks_like_generation_name(name) && !g_hash_table_contains(active_names, name)) {
-            g_autofree char *path = g_build_filename(store->directory, name, NULL);
-            (void)g_unlink(path);
-        }
     }
 }
 
@@ -616,7 +568,6 @@ lmme_recovery_list(LmmeRecoveryStore *store, GError **error)
 {
     GPtrArray *entries = g_ptr_array_new_with_free_func((GDestroyNotify)lmme_recovery_entry_free);
     g_autoptr(GHashTable) seen_hashes = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
-    g_autoptr(GHashTable) active_names = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 
     if (store == NULL) {
         g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid recovery store.");
@@ -626,12 +577,11 @@ lmme_recovery_list(LmmeRecoveryStore *store, GError **error)
     if (!g_file_test(store->directory, G_FILE_TEST_IS_DIR)) {
         return entries;
     }
-    if (!append_metadata_entries(store, entries, seen_hashes, active_names, error)) {
+    if (!append_metadata_entries(store, entries, seen_hashes, error)) {
         g_ptr_array_unref(entries);
         return NULL;
     }
-    append_legacy_entries(store, entries, seen_hashes, active_names);
-    cleanup_orphan_generations(store, active_names);
+    append_legacy_entries(store, entries, seen_hashes);
     return entries;
 }
 
