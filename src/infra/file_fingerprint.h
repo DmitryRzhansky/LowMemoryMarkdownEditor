@@ -11,12 +11,14 @@ typedef struct {
     guint64 device;
 } LmmeFileFingerprint;
 
+/* out_fingerprint is required and caller-owned; error may be NULL. */
 gboolean lmme_file_fingerprint_read(const char *path,
                                     LmmeFileFingerprint *out_fingerprint,
                                     GError **error);
 gboolean lmme_file_fingerprint_read_fd(int fd,
                                        LmmeFileFingerprint *out_fingerprint,
                                        GError **error);
+/* Both fingerprints are borrowed; NULL never compares equal. */
 gboolean lmme_file_fingerprint_equal(const LmmeFileFingerprint *left,
                                      const LmmeFileFingerprint *right);
 

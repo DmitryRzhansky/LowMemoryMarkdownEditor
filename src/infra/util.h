@@ -16,6 +16,7 @@ gboolean lmme_path_is_hidden_basename(const char *name);
 gboolean lmme_path_should_skip_dir(const char *name);
 LmmeFileKind lmme_file_kind_from_path(const char *path, gboolean is_dir, gboolean show_images);
 
+/* Every char * return in this header is caller-owned and may be freed with g_free(). */
 char *lmme_path_join(const char *first, const char *second);
 char *lmme_path_relative_to(const char *root, const char *path);
 gboolean lmme_path_is_inside(const char *root, const char *path);
@@ -27,6 +28,7 @@ char *lmme_generate_image_filename(const char *directory,
                                    const char *extension,
                                    GDateTime *now);
 
+/* name is required; error may be NULL. */
 gboolean lmme_validate_basename(const char *name, GError **error);
 guint lmme_word_count(const char *text);
 char *lmme_hash_path(const char *path);

@@ -15,6 +15,11 @@ typedef enum {
     LMME_FILE_CHANGE_EXTERNAL_DELETED
 } LmmeFileChangeAction;
 
+/*
+ * current and last_known are borrowed and required. expected_internal is
+ * borrowed and may be NULL when has_expected_internal is FALSE. This function
+ * is pure.
+ */
 LmmeFileChangeAction lmme_file_change_decide(const LmmeFileFingerprint *current,
                                               const LmmeFileFingerprint *last_known,
                                               const LmmeFileFingerprint *expected_internal,
@@ -23,6 +28,7 @@ LmmeFileChangeAction lmme_file_change_decide(const LmmeFileFingerprint *current,
                                               gboolean restored,
                                               LmmeDiskState disk_state);
 
+/* doc is borrowed; attach/detach update only the monitor owned by doc. */
 void lmme_document_file_monitor_attach(LmmeDocument *doc);
 void lmme_document_file_monitor_detach(LmmeDocument *doc);
 gboolean lmme_document_resolve_external_conflict(LmmeDocument *doc);

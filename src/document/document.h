@@ -64,6 +64,10 @@ struct _LmmeDocument {
     GCancellable *clipboard_cancellable;
 };
 
+/*
+ * Returns an owned document. app is borrowed for the document lifetime; path,
+ * contents, and relative_title are borrowed only for this call.
+ */
 LmmeDocument *lmme_document_new(LmmeApp *app,
                                 const char *path,
                                 const char *contents,
@@ -77,6 +81,7 @@ void lmme_document_mark_recovered(LmmeDocument *doc,
                                   const char *recovery_source_path,
                                   gboolean original_changed);
 gboolean lmme_document_flush_recovery(LmmeDocument *doc, GError **error);
+/* Save errors are optional; COMMITTED_NOT_DURABLE still means the target changed. */
 LmmeDocumentSaveResult lmme_document_save(LmmeDocument *doc, GError **error);
 LmmeDocumentSaveResult lmme_document_overwrite(LmmeDocument *doc, GError **error);
 LmmeDocumentSaveResult lmme_document_save_as(LmmeDocument *doc,

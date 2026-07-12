@@ -15,6 +15,7 @@ void lmme_file_tree_populate(GtkWidget *tree_view,
 gboolean lmme_file_tree_refresh_directory(GtkWidget *tree_view,
                                           const char *directory_path,
                                           GError **error);
+/* On success, out_path receives an owned string; out_kind is caller-owned. */
 gboolean lmme_file_tree_get_selected(GtkWidget *tree_view,
                                      char **out_path,
                                      LmmeFileKind *out_kind);

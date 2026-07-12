@@ -37,12 +37,15 @@ typedef struct {
     GPtrArray *open_tabs;
 } LmmeConfig;
 
+/* LmmeConfig owns its string and open_tabs members after initialization. */
 void lmme_config_init_defaults(LmmeConfig *config);
 void lmme_config_clear(LmmeConfig *config);
+/* Returns an owned path. */
 char *lmme_config_default_path(void);
 gboolean lmme_config_load(LmmeConfig *config, const char *path, GError **error);
 gboolean lmme_config_save(const LmmeConfig *config, const char *path, GError **error);
 void lmme_config_set_last_workspace(LmmeConfig *config, const char *path);
+/* paths and its strings are borrowed and copied; paths may be NULL. */
 void lmme_config_set_open_tabs(LmmeConfig *config, GPtrArray *paths);
 
 #endif

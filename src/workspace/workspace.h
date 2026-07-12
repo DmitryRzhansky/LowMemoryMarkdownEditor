@@ -19,6 +19,7 @@ typedef struct _LmmeWorkspace {
     LmmeFileNode *root;
 } LmmeWorkspace;
 
+/* Constructors return owned workspaces, or NULL on a reported scan failure. */
 LmmeWorkspace *lmme_workspace_new(const char *path);
 LmmeWorkspace *lmme_workspace_new_scanned(const char *path,
                                           gboolean show_hidden_files,
@@ -39,6 +40,7 @@ gboolean lmme_workspace_refresh_directory(LmmeWorkspace *workspace,
                                           gboolean show_hidden_files,
                                           gboolean show_images,
                                           GError **error);
+/* Returns a borrowed node owned by workspace; it may be NULL. */
 LmmeFileNode *lmme_workspace_find_node(LmmeWorkspace *workspace, const char *path);
 gboolean lmme_workspace_validate_target_parent(const LmmeWorkspace *workspace,
                                                 const char *path,
@@ -64,6 +66,7 @@ gboolean lmme_workspace_rename_path(const LmmeWorkspace *workspace,
                                     char **out_path,
                                     GError **error);
 gboolean lmme_workspace_delete_path(const LmmeWorkspace *workspace, const char *path, GError **error);
+/* Returned strings and successful out_path values are caller-owned. */
 char *lmme_workspace_target_directory(const LmmeWorkspace *workspace,
                                       const char *selected_path,
                                       gboolean selected_is_dir);

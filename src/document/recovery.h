@@ -17,11 +17,14 @@ typedef struct {
     gboolean legacy;
 } LmmeRecoveryEntry;
 
+/* Constructors and stage_new return owned objects; NULL indicates failure. */
 LmmeRecoveryStore *lmme_recovery_store_new(const char *directory);
 LmmeRecoveryStore *lmme_recovery_store_new_default(void);
 void lmme_recovery_store_free(LmmeRecoveryStore *store);
 
+/* Borrowed from store and valid until the store is freed. */
 const char *lmme_recovery_store_get_directory(const LmmeRecoveryStore *store);
+/* Returns an owned active-generation or legacy-compatible path; NULL on invalid input. */
 char *lmme_recovery_path_for_original(const LmmeRecoveryStore *store,
                                       const char *original_path);
 gboolean lmme_recovery_exists(const LmmeRecoveryStore *store,
@@ -40,11 +43,16 @@ LmmeRecoveryStage *lmme_recovery_stage_new(LmmeRecoveryStore *store,
                                            const char *contents,
                                            gsize length,
                                            GError **error);
+/* Commit does not consume stage; every returned stage must still be freed. */
 gboolean lmme_recovery_stage_commit(LmmeRecoveryStage *stage, GError **error);
 void lmme_recovery_stage_free(LmmeRecoveryStage *stage);
 gboolean lmme_recovery_remove(LmmeRecoveryStore *store,
                               const char *original_path,
                               GError **error);
+/*
+ * Returns an owned GPtrArray with owned LmmeRecoveryEntry elements, or NULL on
+ * error. Unref the array to release the entries.
+ */
 GPtrArray *lmme_recovery_list(LmmeRecoveryStore *store, GError **error);
 gboolean lmme_recovery_entry_original_changed(const LmmeRecoveryEntry *entry,
                                                GError **error);

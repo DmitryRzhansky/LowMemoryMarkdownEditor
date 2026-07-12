@@ -33,6 +33,7 @@ typedef struct {
     guint end_offset;
 } LmmePreviewRange;
 
+/* Returns an owned array whose range elements are released when it is unrefed. */
 GPtrArray *lmme_preview_collect_ranges(const char *markdown,
                                        gboolean hide_frontmatter,
                                        guint active_line,
