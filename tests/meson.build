@@ -10,6 +10,7 @@ test_sources = {
   'test_search_flow': 'test_search_flow.c',
   'test_file_fingerprint': 'test_file_fingerprint.c',
   'test_file_io': 'test_file_io.c',
+  'test_file_monitor_state': 'test_file_monitor_state.c',
   'test_document_lifecycle': 'test_document_lifecycle.c',
   'test_document_paths': 'test_document_paths.c',
 }

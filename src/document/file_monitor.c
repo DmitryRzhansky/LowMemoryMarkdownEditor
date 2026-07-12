@@ -150,6 +150,36 @@ is_relevant_event(GFileMonitorEvent event_type)
            event_type == G_FILE_MONITOR_EVENT_RENAMED;
 }
 
+LmmeFileChangeAction
+lmme_file_change_decide(const LmmeFileFingerprint *current,
+                        const LmmeFileFingerprint *last_known,
+                        const LmmeFileFingerprint *expected_internal,
+                        gboolean has_expected_internal,
+                        gboolean modified,
+                        gboolean restored,
+                        LmmeDiskState disk_state)
+{
+    (void)disk_state;
+
+    if (current == NULL || last_known == NULL) {
+        return LMME_FILE_CHANGE_IGNORE;
+    }
+    if (has_expected_internal && expected_internal != NULL &&
+        lmme_file_fingerprint_equal(current, expected_internal)) {
+        return LMME_FILE_CHANGE_INTERNAL_WRITE;
+    }
+    if (lmme_file_fingerprint_equal(current, last_known)) {
+        return LMME_FILE_CHANGE_IGNORE;
+    }
+    if (!current->exists) {
+        return LMME_FILE_CHANGE_EXTERNAL_DELETED;
+    }
+    if (!modified && !restored) {
+        return LMME_FILE_CHANGE_RELOAD;
+    }
+    return LMME_FILE_CHANGE_EXTERNAL_CHANGED;
+}
+
 static void
 on_file_monitor_changed(GFileMonitor *monitor,
                         GFile *file,
@@ -159,6 +189,7 @@ on_file_monitor_changed(GFileMonitor *monitor,
 {
     LmmeDocument *doc = user_data;
     LmmeFileFingerprint current = {0};
+    LmmeFileChangeAction action;
     g_autoptr(GError) error = NULL;
 
     (void)monitor;
@@ -169,18 +200,24 @@ on_file_monitor_changed(GFileMonitor *monitor,
         !lmme_file_fingerprint_read(doc->path, &current, &error)) {
         return;
     }
-    if (doc->has_expected_internal_fingerprint &&
-        lmme_file_fingerprint_equal(&current, &doc->expected_internal_fingerprint)) {
+    action = lmme_file_change_decide(&current,
+                                     &doc->last_known_fingerprint,
+                                     &doc->expected_internal_fingerprint,
+                                     doc->has_expected_internal_fingerprint,
+                                     doc->modified,
+                                     doc->restored_from_recovery,
+                                     doc->disk_state);
+    if (action == LMME_FILE_CHANGE_IGNORE) {
+        return;
+    }
+    if (action == LMME_FILE_CHANGE_INTERNAL_WRITE) {
         doc->last_known_fingerprint = current;
         doc->has_expected_internal_fingerprint = FALSE;
         return;
     }
-    if (lmme_file_fingerprint_equal(&current, &doc->last_known_fingerprint)) {
-        return;
-    }
 
     doc->last_known_fingerprint = current;
-    if (!current.exists) {
+    if (action == LMME_FILE_CHANGE_EXTERNAL_DELETED) {
         doc->disk_state = LMME_DISK_STATE_EXTERNAL_DELETED;
         lmme_document_cancel_autosave(doc);
         (void)lmme_document_flush_recovery(doc, NULL);
@@ -189,7 +226,7 @@ on_file_monitor_changed(GFileMonitor *monitor,
         return;
     }
 
-    if (!doc->modified && !doc->restored_from_recovery) {
+    if (action == LMME_FILE_CHANGE_RELOAD) {
         if (!reload_document_from_disk(doc, &current, &error)) {
             lmme_window_set_status_error(doc->app, "Could not reload externally changed file");
         }
