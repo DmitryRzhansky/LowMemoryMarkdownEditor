@@ -12,6 +12,9 @@ void lmme_file_tree_populate(GtkWidget *tree_view,
                              LmmeWorkspace *workspace,
                              gboolean show_hidden_files,
                              gboolean show_images);
+gboolean lmme_file_tree_refresh_directory(GtkWidget *tree_view,
+                                          const char *directory_path,
+                                          GError **error);
 gboolean lmme_file_tree_get_selected(GtkWidget *tree_view,
                                      char **out_path,
                                      LmmeFileKind *out_kind);
@@ -21,5 +24,7 @@ gboolean lmme_file_tree_select_at(GtkWidget *tree_view,
                                   char **out_path,
                                   LmmeFileKind *out_kind);
 gboolean lmme_file_tree_select_path(GtkWidget *tree_view, const char *path);
+gpointer lmme_file_tree_model_identity(GtkWidget *tree_view);
+guint lmme_file_tree_monitor_count(GtkWidget *tree_view);
 
 #endif

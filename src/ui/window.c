@@ -276,17 +276,12 @@ lmme_window_refresh_tree_directory(LmmeApp *app, const char *directory_path)
     if (app == NULL || app->workspace == NULL || directory_path == NULL) {
         return;
     }
-    if (!lmme_workspace_refresh_directory(app->workspace,
-                                          directory_path,
-                                          app->config.show_hidden_files,
-                                          app->config.show_images,
-                                          &error)) {
+    if (!lmme_file_tree_refresh_directory(app->tree_view, directory_path, &error)) {
         if (error != NULL && !g_error_matches(error, G_FILE_ERROR, G_FILE_ERROR_NOENT)) {
             lmme_dialog_error(GTK_WINDOW(app->window), "Could not refresh workspace.", error->message);
         }
         return;
     }
-    lmme_window_refresh_tree(app);
 }
 
 void

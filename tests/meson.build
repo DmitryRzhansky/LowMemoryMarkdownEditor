@@ -47,6 +47,16 @@ preview_active_line_benchmark = executable(
 )
 benchmark('preview_active_line', preview_active_line_benchmark)
 
+tree_refresh_benchmark = executable(
+  'benchmark_tree_refresh',
+  'benchmark_tree_refresh.c',
+  link_with: lmme_lib,
+  dependencies: deps,
+  include_directories: include_directories('../src'),
+  c_args: common_args,
+)
+benchmark('tree_refresh', tree_refresh_benchmark)
+
 safe_write_benchmark = executable(
   'benchmark_safe_write',
   'benchmark_safe_write.c',

@@ -27,6 +27,7 @@ typedef struct {
     GtkTreeListModel *tree_model;
     GtkSingleSelection *selection;
     gulong activate_handler_id;
+    GHashTable *child_stores;
     GHashTable *directory_monitors;
     GHashTable *dirty_directories;
     guint monitor_timeout_id;
@@ -38,25 +39,15 @@ static const char *row_kind_key = "lmme-tree-kind";
 static const char *row_position_key = "lmme-tree-position";
 
 static void ensure_directory_monitor(LmmeFileTreeState *state, const char *path);
+static void refresh_dirty_directories(LmmeFileTreeState *state);
 
 static gboolean
 monitor_refresh_timeout(gpointer user_data)
 {
     LmmeFileTreeState *state = user_data;
-    GHashTableIter iter;
-    gpointer key = NULL;
-
     state->monitor_timeout_id = 0;
-    g_hash_table_iter_init(&iter, state->dirty_directories);
-    while (g_hash_table_iter_next(&iter, &key, NULL)) {
-        (void)lmme_workspace_refresh_directory(state->workspace,
-                                               key,
-                                               state->show_hidden_files,
-                                               state->show_images,
-                                               NULL);
-    }
+    refresh_dirty_directories(state);
     g_hash_table_remove_all(state->dirty_directories);
-    lmme_window_refresh_tree(state->app);
     return G_SOURCE_REMOVE;
 }
 
@@ -168,6 +159,7 @@ file_tree_state_free(LmmeFileTreeState *state)
     if (state->monitor_timeout_id != 0) {
         g_source_remove(state->monitor_timeout_id);
     }
+    g_clear_pointer(&state->child_stores, g_hash_table_unref);
     g_clear_pointer(&state->directory_monitors, g_hash_table_unref);
     g_clear_pointer(&state->dirty_directories, g_hash_table_unref);
     g_free(state);
@@ -184,6 +176,10 @@ create_child_model(gpointer object, gpointer user_data)
     if (item->node == NULL || item->kind != LMME_FILE_KIND_DIRECTORY) {
         return NULL;
     }
+    children = g_hash_table_lookup(state->child_stores, item->node->path);
+    if (children != NULL) {
+        return G_LIST_MODEL(g_object_ref(children));
+    }
     ensure_directory_monitor(state, item->node->path);
     if (!lmme_workspace_load_directory(state->workspace,
                                        item->node,
@@ -199,6 +195,9 @@ create_child_model(gpointer object, gpointer user_data)
         g_autoptr(LmmeTreeItem) child = tree_item_new(g_ptr_array_index(item->node->children, i));
         g_list_store_append(children, child);
     }
+    g_hash_table_insert(state->child_stores,
+                        g_strdup(item->node->path),
+                        g_object_ref(children));
     return G_LIST_MODEL(children);
 }
 
@@ -371,6 +370,98 @@ expanded_paths(GtkWidget *tree_view)
     return paths;
 }
 
+static void
+restore_expanded_paths(LmmeFileTreeState *state, GHashTable *paths)
+{
+    gboolean expanded_any = FALSE;
+
+    do {
+        guint count = g_list_model_get_n_items(G_LIST_MODEL(state->tree_model));
+        expanded_any = FALSE;
+        for (guint i = 0; i < count; i++) {
+            g_autoptr(GtkTreeListRow) row = gtk_tree_list_model_get_row(state->tree_model, i);
+            LmmeTreeItem *item = row != NULL ? gtk_tree_list_row_get_item(row) : NULL;
+            if (item != NULL && g_hash_table_contains(paths, item->path) &&
+                !gtk_tree_list_row_get_expanded(row)) {
+                gtk_tree_list_row_set_expanded(row, TRUE);
+                expanded_any = TRUE;
+            }
+        }
+    } while (expanded_any);
+}
+
+static void
+replace_child_store_items(GListStore *store, LmmeFileNode *directory)
+{
+    g_list_store_remove_all(store);
+    for (guint i = 0; i < directory->children->len; i++) {
+        g_autoptr(LmmeTreeItem) child = tree_item_new(g_ptr_array_index(directory->children, i));
+        g_list_store_append(store, child);
+    }
+}
+
+static void
+prune_removed_directories(LmmeFileTreeState *state)
+{
+    GHashTableIter iter;
+    gpointer key = NULL;
+
+    g_hash_table_iter_init(&iter, state->child_stores);
+    while (g_hash_table_iter_next(&iter, &key, NULL)) {
+        if (lmme_workspace_find_node(state->workspace, key) == NULL) {
+            g_hash_table_iter_remove(&iter);
+        }
+    }
+    g_hash_table_iter_init(&iter, state->directory_monitors);
+    while (g_hash_table_iter_next(&iter, &key, NULL)) {
+        if (lmme_workspace_find_node(state->workspace, key) == NULL) {
+            g_hash_table_iter_remove(&iter);
+        }
+    }
+}
+
+static gboolean
+refresh_directory_state(LmmeFileTreeState *state,
+                        const char *directory_path,
+                        GError **error)
+{
+    LmmeFileNode *node = NULL;
+    GListStore *store = NULL;
+
+    if (!lmme_workspace_refresh_directory(state->workspace,
+                                          directory_path,
+                                          state->show_hidden_files,
+                                          state->show_images,
+                                          error)) {
+        return FALSE;
+    }
+    node = lmme_workspace_find_node(state->workspace, directory_path);
+    store = g_hash_table_lookup(state->child_stores, directory_path);
+    if (node != NULL && store != NULL) {
+        replace_child_store_items(store, node);
+    }
+    return TRUE;
+}
+
+static void
+refresh_dirty_directories(LmmeFileTreeState *state)
+{
+    g_autoptr(GHashTable) expanded = expanded_paths(state->app->tree_view);
+    g_autofree char *selected_path = g_strdup(state->app->selection.path);
+    GHashTableIter iter;
+    gpointer key = NULL;
+
+    g_hash_table_iter_init(&iter, state->dirty_directories);
+    while (g_hash_table_iter_next(&iter, &key, NULL)) {
+        (void)refresh_directory_state(state, key, NULL);
+    }
+    prune_removed_directories(state);
+    restore_expanded_paths(state, expanded);
+    if (selected_path == NULL || !lmme_file_tree_select_path(state->app->tree_view, selected_path)) {
+        lmme_path_context_clear(&state->app->selection);
+    }
+}
+
 void
 lmme_file_tree_populate(GtkWidget *tree_view,
                         LmmeWorkspace *workspace,
@@ -406,6 +497,10 @@ lmme_file_tree_populate(GtkWidget *tree_view,
     state->workspace = workspace;
     state->show_hidden_files = show_hidden_files;
     state->show_images = show_images;
+    state->child_stores = g_hash_table_new_full(g_str_hash,
+                                                 g_str_equal,
+                                                 g_free,
+                                                 g_object_unref);
     state->directory_monitors = g_hash_table_new_full(g_str_hash,
                                                        g_str_equal,
                                                        g_free,
@@ -430,13 +525,7 @@ lmme_file_tree_populate(GtkWidget *tree_view,
     ensure_directory_monitor(state, workspace->root->path);
 
     g_hash_table_add(expanded, g_strdup(workspace->root->path));
-    for (guint i = 0; i < g_list_model_get_n_items(G_LIST_MODEL(state->tree_model)); i++) {
-        g_autoptr(GtkTreeListRow) row = gtk_tree_list_model_get_row(state->tree_model, i);
-        LmmeTreeItem *item = row != NULL ? gtk_tree_list_row_get_item(row) : NULL;
-        if (item != NULL && g_hash_table_contains(expanded, item->path)) {
-            gtk_tree_list_row_set_expanded(row, TRUE);
-        }
-    }
+    restore_expanded_paths(state, expanded);
     if (selected_path != NULL) {
         guint count = g_list_model_get_n_items(G_LIST_MODEL(state->tree_model));
         for (guint i = 0; i < count; i++) {
@@ -448,6 +537,46 @@ lmme_file_tree_populate(GtkWidget *tree_view,
             }
         }
     }
+}
+
+gboolean
+lmme_file_tree_refresh_directory(GtkWidget *tree_view,
+                                 const char *directory_path,
+                                 GError **error)
+{
+    LmmeFileTreeState *state = g_object_get_data(G_OBJECT(tree_view), state_key);
+    g_autoptr(GHashTable) expanded = NULL;
+    g_autofree char *selected_path = NULL;
+
+    if (state == NULL || directory_path == NULL) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "File tree is not ready.");
+        return FALSE;
+    }
+    expanded = expanded_paths(tree_view);
+    selected_path = g_strdup(state->app->selection.path);
+    if (!refresh_directory_state(state, directory_path, error)) {
+        return FALSE;
+    }
+    prune_removed_directories(state);
+    restore_expanded_paths(state, expanded);
+    if (selected_path == NULL || !lmme_file_tree_select_path(tree_view, selected_path)) {
+        lmme_path_context_clear(&state->app->selection);
+    }
+    return TRUE;
+}
+
+gpointer
+lmme_file_tree_model_identity(GtkWidget *tree_view)
+{
+    LmmeFileTreeState *state = g_object_get_data(G_OBJECT(tree_view), state_key);
+    return state != NULL ? state->tree_model : NULL;
+}
+
+guint
+lmme_file_tree_monitor_count(GtkWidget *tree_view)
+{
+    LmmeFileTreeState *state = g_object_get_data(G_OBJECT(tree_view), state_key);
+    return state != NULL ? g_hash_table_size(state->directory_monitors) : 0;
 }
 
 gboolean
