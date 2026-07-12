@@ -10,6 +10,9 @@ Small Linux-only GTK Markdown editor focused on low memory usage and local folde
 - supports tabs
 - supports autosave and manual save
 - preserves unsaved recovery data during shutdown and restores it to the original Markdown path
+- keeps recovery inspection non-destructive when metadata is missing or corrupt
+- shows `Recovery failed` alongside `Modified`, `Conflict`, or `Deleted` without hiding disk state
+- blocks destructive reload/close choices until current local contents are saved, recovered, or explicitly discarded
 - detects external file changes without a time-based ignore window
 - toggles between Source and single-pane Editable Preview styling
 - supports editor font zoom with Ctrl++, Ctrl+-, Ctrl+0, and numpad variants
