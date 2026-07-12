@@ -68,7 +68,10 @@ write_all(int fd,
             if (errno == EINTR) {
                 continue;
             }
-            g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not write file.");
+            g_set_error(error,
+                        G_FILE_ERROR,
+                        (gint)g_file_error_from_errno(errno),
+                        "Could not write file.");
             return FALSE;
         }
         if (result == 0) {
@@ -109,7 +112,7 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
         if (resolved_path == NULL) {
             g_set_error(error,
                         G_FILE_ERROR,
-                        g_file_error_from_errno(errno),
+                        (gint)g_file_error_from_errno(errno),
                         "Could not resolve symbolic link before saving.");
             return outcome;
         }
@@ -119,7 +122,10 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
     if (stat(target_path, &target_stat) == 0) {
         mode = target_stat.st_mode & 07777;
     } else if (errno != ENOENT) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not inspect file before saving.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not inspect file before saving.");
         return outcome;
     }
 
@@ -137,13 +143,19 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
     fd = g_mkstemp_full(tmp_path, O_RDWR | O_CLOEXEC, (gint)mode);
 
     if (fd < 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not create temporary save file.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not create temporary save file.");
         return outcome;
     }
 
     if (test_fault_should_fail(LMME_SAFE_WRITE_TEST_FAIL_FCHMOD, invocation) ||
         fchmod(fd, mode) != 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not preserve file permissions.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not preserve file permissions.");
         goto out;
     }
 
@@ -153,7 +165,10 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
 
     if (test_fault_should_fail(LMME_SAFE_WRITE_TEST_FAIL_FILE_FSYNC, invocation) ||
         fsync(fd) != 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not flush temporary save file.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not flush temporary save file.");
         goto out;
     }
 
@@ -170,14 +185,20 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
     }
     if (close(fd) != 0) {
         fd = -1;
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not close temporary save file.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not close temporary save file.");
         goto out;
     }
     fd = -1;
 
     if (test_fault_should_fail(LMME_SAFE_WRITE_TEST_FAIL_RENAME, invocation) ||
         g_rename(tmp_path, target_path) != 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not replace file.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not replace file.");
         goto out;
     }
     renamed = TRUE;
@@ -192,12 +213,18 @@ lmme_safe_write_file(const char *path, const char *contents, gsize length, GErro
     }
     dir_fd = g_open(dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0);
     if (dir_fd < 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not open parent directory after saving.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not open parent directory after saving.");
         goto out;
     }
     if (test_fault_should_fail(LMME_SAFE_WRITE_TEST_FAIL_DIRECTORY_FSYNC, invocation) ||
         fsync(dir_fd) != 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not flush parent directory after saving.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not flush parent directory after saving.");
         goto out;
     }
     outcome.result = LMME_SAFE_WRITE_COMMITTED_DURABLE;

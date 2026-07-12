@@ -285,10 +285,16 @@ ensure_img_dir(LmmeApp *app, char **out_dir, GError **error)
             return FALSE;
         }
     } else if (errno != ENOENT) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not inspect img folder.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not inspect img folder.");
         return FALSE;
     } else if (g_mkdir(dir, 0700) != 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not create img folder.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not create img folder.");
         return FALSE;
     }
 

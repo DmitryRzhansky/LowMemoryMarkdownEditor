@@ -177,7 +177,10 @@ lmme_config_save(const LmmeConfig *config, const char *path, GError **error)
     gsize length = 0;
 
     if (g_mkdir_with_parents(dir, 0700) != 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not create config directory.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not create config directory.");
         return FALSE;
     }
 

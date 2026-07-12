@@ -286,7 +286,7 @@ lmme_workspace_validate_target_parent(const LmmeWorkspace *workspace,
     if (workspace_real == NULL || parent_real == NULL) {
         g_set_error(error,
                     G_FILE_ERROR,
-                    g_file_error_from_errno(errno),
+                    (gint)g_file_error_from_errno(errno),
                     "Could not resolve the workspace path safely.");
         return FALSE;
     }
@@ -424,13 +424,16 @@ lmme_workspace_create_markdown_file(const LmmeWorkspace *workspace,
     if (fd < 0) {
         g_set_error(error,
                     G_FILE_ERROR,
-                    g_file_error_from_errno(errno),
+                    (gint)g_file_error_from_errno(errno),
                     errno == EEXIST ? "A file with this name already exists."
                                      : "Could not create Markdown file.");
         return FALSE;
     }
     if (close(fd) != 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not close new Markdown file.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not close new Markdown file.");
         g_unlink(path);
         return FALSE;
     }
@@ -465,7 +468,10 @@ lmme_workspace_create_folder(const LmmeWorkspace *workspace,
         return FALSE;
     }
     if (g_mkdir(path, 0700) != 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not create folder.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not create folder.");
         return FALSE;
     }
 
@@ -500,11 +506,17 @@ lmme_workspace_rename_path(const LmmeWorkspace *workspace,
         g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_EXIST, "A file with this name already exists.");
         return FALSE;
     } else if (errno != ENOENT) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not inspect rename destination.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not inspect rename destination.");
         return FALSE;
     }
     if (g_rename(path, target) != 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not rename item.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not rename item.");
         return FALSE;
     }
 
@@ -521,7 +533,10 @@ preflight_delete_path(const char *path, dev_t workspace_device, GError **error)
     struct stat info;
 
     if (lstat(path, &info) != 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not inspect item before deletion.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not inspect item before deletion.");
         return FALSE;
     }
     if (S_ISLNK(info.st_mode) || !S_ISDIR(info.st_mode)) {
@@ -555,7 +570,10 @@ delete_path_recursive(const char *path, GError **error)
     struct stat info;
 
     if (lstat(path, &info) != 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not inspect item during deletion.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not inspect item during deletion.");
         return FALSE;
     }
     if (S_ISDIR(info.st_mode) && !S_ISLNK(info.st_mode)) {
@@ -574,11 +592,17 @@ delete_path_recursive(const char *path, GError **error)
         }
 
         if (g_rmdir(path) != 0) {
-            g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not delete folder.");
+            g_set_error(error,
+                        G_FILE_ERROR,
+                        (gint)g_file_error_from_errno(errno),
+                        "Could not delete folder.");
             return FALSE;
         }
     } else if (g_unlink(path) != 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not delete file.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not delete file.");
         return FALSE;
     }
 
@@ -599,7 +623,10 @@ lmme_workspace_delete_path(const LmmeWorkspace *workspace, const char *path, GEr
     }
 
     if (stat(workspace->path, &workspace_info) != 0) {
-        g_set_error(error, G_FILE_ERROR, g_file_error_from_errno(errno), "Could not inspect workspace before deletion.");
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not inspect workspace before deletion.");
         return FALSE;
     }
     if (!preflight_delete_path(path, workspace_info.st_dev, error)) {
