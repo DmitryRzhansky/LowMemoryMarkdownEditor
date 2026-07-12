@@ -26,17 +26,8 @@ gboolean lmme_tabs_close_all(LmmeApp *app);
 gboolean lmme_tabs_prepare_close_all(LmmeApp *app);
 void lmme_tabs_resume_pending_saves(LmmeApp *app);
 GPtrArray *lmme_tabs_find_in_subtree(LmmeApp *app, const char *root);
-gboolean lmme_tabs_validate_subtree_remap(LmmeApp *app,
-                                          const char *old_root,
-                                          const char *new_root,
-                                          GError **error);
-gboolean lmme_tabs_remap_subtree(LmmeApp *app,
-                                 const char *old_root,
-                                 const char *new_root,
-                                 GError **error);
 void lmme_tabs_forget_subtree(LmmeApp *app, const char *root);
 void lmme_tabs_close_path(LmmeApp *app, const char *path);
-void lmme_tabs_update_path(LmmeApp *app, const char *old_path, const char *new_path);
 GPtrArray *lmme_tabs_open_paths(LmmeApp *app);
 LmmePreviewApplyResult lmme_tabs_set_preview_visible(LmmeApp *app, gboolean visible);
 

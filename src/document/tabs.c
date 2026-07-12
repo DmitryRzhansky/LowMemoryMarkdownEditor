@@ -492,115 +492,6 @@ lmme_tabs_find_in_subtree(LmmeApp *app, const char *root)
     return documents;
 }
 
-gboolean
-lmme_tabs_validate_subtree_remap(LmmeApp *app,
-                                 const char *old_root,
-                                 const char *new_root,
-                                 GError **error)
-{
-    g_autofree char *canonical_old = NULL;
-    g_autofree char *canonical_new = NULL;
-    g_autoptr(GPtrArray) documents = NULL;
-
-    if (app == NULL || old_root == NULL || new_root == NULL) {
-        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid document path remap.");
-        return FALSE;
-    }
-    canonical_old = g_canonicalize_filename(old_root, NULL);
-    canonical_new = g_canonicalize_filename(new_root, NULL);
-    documents = lmme_tabs_find_in_subtree(app, canonical_old);
-
-    for (guint i = 0; i < documents->len; i++) {
-        LmmeDocument *doc = g_ptr_array_index(documents, i);
-        const char *suffix = doc->path + strlen(canonical_old);
-        g_autofree char *new_path = NULL;
-
-        while (*suffix == G_DIR_SEPARATOR) {
-            suffix++;
-        }
-        new_path = suffix[0] == '\0' ? g_strdup(canonical_new)
-                                      : g_build_filename(canonical_new, suffix, NULL);
-        if (lmme_recovery_exists(app->recovery_store, new_path)) {
-            g_set_error_literal(error,
-                                G_FILE_ERROR,
-                                G_FILE_ERROR_EXIST,
-                                "Recovery data already exists for the rename destination.");
-            return FALSE;
-        }
-    }
-    return TRUE;
-}
-
-gboolean
-lmme_tabs_remap_subtree(LmmeApp *app,
-                        const char *old_root,
-                        const char *new_root,
-                        GError **error)
-{
-    g_autofree char *canonical_old = NULL;
-    g_autofree char *canonical_new = NULL;
-    g_autoptr(GPtrArray) documents = NULL;
-    GPtrArray *new_paths = NULL;
-    gboolean success = TRUE;
-
-    if (app == NULL || old_root == NULL || new_root == NULL) {
-        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid document path remap.");
-        return FALSE;
-    }
-    canonical_old = g_canonicalize_filename(old_root, NULL);
-    canonical_new = g_canonicalize_filename(new_root, NULL);
-    documents = lmme_tabs_find_in_subtree(app, canonical_old);
-    new_paths = g_ptr_array_new_with_free_func(g_free);
-
-    for (guint i = 0; i < documents->len; i++) {
-        LmmeDocument *doc = g_ptr_array_index(documents, i);
-        const char *suffix = doc->path + strlen(canonical_old);
-        while (*suffix == G_DIR_SEPARATOR) {
-            suffix++;
-        }
-        g_ptr_array_add(new_paths,
-                        suffix[0] == '\0' ? g_strdup(canonical_new)
-                                          : g_build_filename(canonical_new, suffix, NULL));
-    }
-
-    for (guint i = 0; i < documents->len; i++) {
-        LmmeDocument *doc = g_ptr_array_index(documents, i);
-        const char *new_path = g_ptr_array_index(new_paths, i);
-        g_autofree char *old_path = g_strdup(doc->path);
-        g_autofree char *old_recovery = lmme_recovery_path_for_original(app->recovery_store, old_path);
-        gboolean had_recovery = g_file_test(old_recovery, G_FILE_TEST_IS_REGULAR);
-
-        lmme_document_file_monitor_detach(doc);
-        g_free(doc->path);
-        doc->path = g_strdup(new_path);
-        g_free(doc->relative_path);
-        doc->relative_path = app->workspace != NULL
-                                 ? lmme_path_relative_to(app->workspace->path, doc->path)
-                                 : g_path_get_basename(doc->path);
-
-        if (had_recovery && (doc->modified || doc->restored_from_recovery)) {
-            g_autoptr(GError) recovery_error = NULL;
-            if (!lmme_document_flush_recovery(doc, &recovery_error)) {
-                if (success && error != NULL) {
-                    g_propagate_error(error, g_steal_pointer(&recovery_error));
-                }
-                success = FALSE;
-            } else {
-                lmme_recovery_remove(app->recovery_store, old_path, NULL);
-                g_free(doc->recovery_source_path);
-                doc->recovery_source_path = lmme_recovery_path_for_original(app->recovery_store, doc->path);
-            }
-        } else if (had_recovery) {
-            lmme_recovery_remove(app->recovery_store, old_path, NULL);
-        }
-        lmme_document_file_monitor_attach(doc);
-        lmme_document_refresh_title(doc);
-    }
-
-    g_ptr_array_unref(new_paths);
-    return success;
-}
-
 void
 lmme_tabs_forget_subtree(LmmeApp *app, const char *root)
 {
@@ -617,16 +508,6 @@ lmme_tabs_forget_subtree(LmmeApp *app, const char *root)
     }
     lmme_window_update_status(app);
     lmme_window_schedule_preview(app);
-}
-
-void
-lmme_tabs_update_path(LmmeApp *app, const char *old_path, const char *new_path)
-{
-    g_autoptr(GError) error = NULL;
-
-    if (!lmme_tabs_remap_subtree(app, old_path, new_path, &error)) {
-        lmme_window_set_status_error(app, "Renamed item, but recovery metadata could not be fully updated");
-    }
 }
 
 GPtrArray *

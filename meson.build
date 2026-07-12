@@ -81,6 +81,7 @@ core_sources = files(
 
   'src/document/document.c',
   'src/document/document_persistence.c',
+  'src/document/document_paths.c',
   'src/document/tabs.c',
   'src/document/document_autosave.c',
   'src/document/recovery.c',

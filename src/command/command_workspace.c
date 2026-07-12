@@ -4,6 +4,7 @@
 
 #include "app/app.h"
 #include "document/document.h"
+#include "document/document_paths.h"
 #include "document/tabs.h"
 #include "infra/dialogs.h"
 #include "infra/util.h"
@@ -108,6 +109,7 @@ action_rename(LmmeApp *app)
     g_autofree char *rename_target = NULL;
     g_autofree char *trimmed_name = NULL;
     g_autoptr(GError) error = NULL;
+    LmmeDocumentPathRemapPlan *remap_plan = NULL;
 
     if (app->workspace == NULL || app->selection.path == NULL) {
         return;
@@ -125,21 +127,23 @@ action_rename(LmmeApp *app)
         return;
     }
     rename_target = g_build_filename(parent_dir, trimmed_name, NULL);
-    if (!lmme_tabs_validate_subtree_remap(app, old_path, rename_target, &error)) {
+    remap_plan = lmme_document_path_remap_plan_new(app,
+                                                   old_path,
+                                                   rename_target,
+                                                   &error);
+    if (remap_plan == NULL) {
         lmme_dialog_error(GTK_WINDOW(app->window), "Could not rename item.", error->message);
         return;
     }
     if (!lmme_workspace_rename_path(app->workspace, old_path, name, &new_path, &error)) {
+        lmme_document_path_remap_plan_free(remap_plan);
         lmme_dialog_error(GTK_WINDOW(app->window),
                           "Could not rename item.",
                           error != NULL ? error->message : NULL);
         return;
     }
-    if (!lmme_tabs_remap_subtree(app, old_path, new_path, &error)) {
-        lmme_dialog_error(GTK_WINDOW(app->window),
-                          "Item was renamed, but open document recovery could not be fully updated.",
-                          error != NULL ? error->message : NULL);
-    }
+    lmme_document_path_remap_plan_commit(remap_plan);
+    lmme_document_path_remap_plan_free(remap_plan);
     lmme_window_refresh_tree_directory(app, parent_dir);
 }
 
