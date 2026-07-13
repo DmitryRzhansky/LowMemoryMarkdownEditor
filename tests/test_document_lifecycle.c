@@ -339,6 +339,124 @@ test_cursor_preview_update_does_not_full_parse(void)
     g_object_unref(doc.buffer);
 }
 
+static char *
+document_buffer_text_include_hidden(GtkTextBuffer *buffer)
+{
+    GtkTextIter start;
+    GtkTextIter end;
+
+    gtk_text_buffer_get_bounds(buffer, &start, &end);
+    return gtk_text_buffer_get_text(buffer, &start, &end, TRUE);
+}
+
+static void
+test_preview_table_lifecycle(void)
+{
+    gtk_init();
+    g_autofree char *root = g_dir_make_tmp("lmme-test-preview-table-XXXXXX", NULL);
+    g_autofree char *path = g_build_filename(root, "table.md", NULL);
+    const char *input = "| A | B |\n|---|---|\n| 1 | 2 |\n";
+    LmmeApp app = {0};
+    LmmeDocument *doc = NULL;
+    GtkWidget *window = NULL;
+    GtkTextTagTable *tag_table = NULL;
+    GtkTextTag *header_tag = NULL;
+    g_autofree char *before = NULL;
+    g_autofree char *after = NULL;
+    GtkTextIter cursor;
+    GtkTextIter sel_start;
+    GtkTextIter sel_end;
+    int cursor_offset = 0;
+    int sel_start_offset = 0;
+    int sel_end_offset = 0;
+
+    g_assert_true(g_file_set_contents(path, input, -1, NULL));
+    app.workspace = lmme_workspace_new(root);
+    app.config.preview_hide_frontmatter = TRUE;
+    doc = lmme_document_new(&app, path, input, "table.md");
+    window = gtk_window_new();
+    gtk_window_set_child(GTK_WINDOW(window), doc->scroller);
+    gtk_widget_realize(window);
+
+    {
+        const char *cursor_ptr = strstr(input, "1");
+        const char *sel_start_ptr = strstr(input, "| 1");
+        const char *sel_end_ptr = strstr(input, "2 |");
+        int cursor_char = 0;
+        int sel_start_char = 0;
+        int sel_end_char = 0;
+
+        g_assert_nonnull(cursor_ptr);
+        g_assert_nonnull(sel_start_ptr);
+        g_assert_nonnull(sel_end_ptr);
+        cursor_char = (int)g_utf8_strlen(input, (gssize)(cursor_ptr - input));
+        sel_start_char = (int)g_utf8_strlen(input, (gssize)(sel_start_ptr - input));
+        sel_end_char = (int)g_utf8_strlen(input, (gssize)(sel_end_ptr - input));
+
+        gtk_text_buffer_get_iter_at_offset(GTK_TEXT_BUFFER(doc->buffer), &cursor, cursor_char);
+        gtk_text_buffer_place_cursor(GTK_TEXT_BUFFER(doc->buffer), &cursor);
+        gtk_text_buffer_get_iter_at_offset(GTK_TEXT_BUFFER(doc->buffer), &sel_start, sel_start_char);
+        gtk_text_buffer_get_iter_at_offset(GTK_TEXT_BUFFER(doc->buffer), &sel_end, sel_end_char);
+        gtk_text_buffer_select_range(GTK_TEXT_BUFFER(doc->buffer), &sel_start, &sel_end);
+    }
+
+    doc->modified = TRUE;
+    gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc->buffer), TRUE);
+    doc->save_state = LMME_SAVE_STATE_MODIFIED;
+
+    gtk_text_buffer_get_iter_at_mark(GTK_TEXT_BUFFER(doc->buffer),
+                                     &cursor,
+                                     gtk_text_buffer_get_insert(GTK_TEXT_BUFFER(doc->buffer)));
+    cursor_offset = gtk_text_iter_get_offset(&cursor);
+    gtk_text_buffer_get_selection_bounds(GTK_TEXT_BUFFER(doc->buffer), &sel_start, &sel_end);
+    sel_start_offset = gtk_text_iter_get_offset(&sel_start);
+    sel_end_offset = gtk_text_iter_get_offset(&sel_end);
+
+    before = document_buffer_text_include_hidden(GTK_TEXT_BUFFER(doc->buffer));
+    g_assert_cmpint(lmme_document_set_preview_visible(doc, TRUE), ==, LMME_PREVIEW_APPLY_OK);
+
+    after = document_buffer_text_include_hidden(GTK_TEXT_BUFFER(doc->buffer));
+    g_assert_cmpstr(after, ==, before);
+
+    gtk_text_buffer_get_iter_at_mark(GTK_TEXT_BUFFER(doc->buffer),
+                                     &cursor,
+                                     gtk_text_buffer_get_insert(GTK_TEXT_BUFFER(doc->buffer)));
+    g_assert_cmpint(gtk_text_iter_get_offset(&cursor), ==, cursor_offset);
+    g_assert_true(gtk_text_buffer_get_selection_bounds(GTK_TEXT_BUFFER(doc->buffer), &sel_start, &sel_end));
+    g_assert_cmpint(gtk_text_iter_get_offset(&sel_start), ==, sel_start_offset);
+    g_assert_cmpint(gtk_text_iter_get_offset(&sel_end), ==, sel_end_offset);
+    g_assert_true(gtk_text_buffer_get_modified(GTK_TEXT_BUFFER(doc->buffer)));
+    g_assert_true(doc->modified);
+    g_assert_cmpint(doc->save_state, ==, LMME_SAVE_STATE_MODIFIED);
+
+    tag_table = gtk_text_buffer_get_tag_table(GTK_TEXT_BUFFER(doc->buffer));
+    header_tag = gtk_text_tag_table_lookup(tag_table, "lmme-preview-table-header-row");
+    g_assert_nonnull(header_tag);
+    g_assert_cmpint(lmme_document_set_preview_visible(doc, TRUE), ==, LMME_PREVIEW_APPLY_OK);
+    g_assert_true(header_tag == gtk_text_tag_table_lookup(tag_table, "lmme-preview-table-header-row"));
+
+    g_assert_cmpint(lmme_document_set_preview_visible(doc, FALSE), ==, LMME_PREVIEW_APPLY_OK);
+    gtk_text_buffer_get_iter_at_line(GTK_TEXT_BUFFER(doc->buffer), &cursor, 2);
+    g_assert_false(gtk_text_iter_has_tag(&cursor,
+                                         gtk_text_tag_table_lookup(tag_table, "lmme-preview-table-body-row")));
+    g_free(after);
+    after = document_buffer_text_include_hidden(GTK_TEXT_BUFFER(doc->buffer));
+    g_assert_cmpstr(after, ==, before);
+
+    gtk_text_buffer_insert_at_cursor(GTK_TEXT_BUFFER(doc->buffer), "x", 1);
+    g_assert_cmpint(lmme_document_set_preview_visible(doc, TRUE), ==, LMME_PREVIEW_APPLY_OK);
+    gtk_text_buffer_undo(GTK_TEXT_BUFFER(doc->buffer));
+    g_free(after);
+    after = document_buffer_text_include_hidden(GTK_TEXT_BUFFER(doc->buffer));
+    g_assert_cmpstr(after, ==, before);
+
+    lmme_document_free(doc);
+    gtk_window_destroy(GTK_WINDOW(window));
+    lmme_workspace_free(app.workspace);
+    g_unlink(path);
+    g_rmdir(root);
+}
+
 static void
 test_recovered_document_saves_to_original(void)
 {
@@ -605,5 +723,6 @@ main(int argc, char **argv)
     g_test_add_func("/document/recovery/external-states",
                     test_external_states_consume_recovery_failure);
     g_test_add_func("/document/preview-cursor-incremental", test_cursor_preview_update_does_not_full_parse);
+    g_test_add_func("/document/preview-table-lifecycle", test_preview_table_lifecycle);
     return g_test_run();
 }
