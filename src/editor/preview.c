@@ -29,15 +29,22 @@ static const char *preview_tag_names[] = {
     "lmme-preview-frontmatter",
     "lmme-preview-hidden-marker",
     "lmme-preview-dim-marker",
-    "lmme-preview-active-marker",
+    "lmme-preview-table",
+    "lmme-preview-table-header-row",
+    "lmme-preview-table-separator-row",
+    "lmme-preview-table-body-row",
 };
+
+G_STATIC_ASSERT(G_N_ELEMENTS(preview_tag_names) == LMME_PREVIEW_RANGE_COUNT);
+
+static const char *active_marker_tag_name = "lmme-preview-active-marker";
 
 static const char *marker_cache_key = "lmme-preview-marker-ranges";
 
 static const char *
 tag_name_for_kind(LmmePreviewRangeKind kind)
 {
-    if ((guint)kind >= G_N_ELEMENTS(preview_tag_names)) {
+    if ((guint)kind >= LMME_PREVIEW_RANGE_COUNT) {
         return NULL;
     }
 
@@ -222,9 +229,41 @@ lmme_preview_ensure_tags(GtkTextBuffer *buffer)
                           "foreground",
                           "#6f7782",
                           NULL);
+    create_tag_if_missing(buffer, "lmme-preview-table", "left-margin", 10, "right-margin", 10, NULL);
+    create_tag_if_missing(buffer,
+                          "lmme-preview-table-header-row",
+                          "weight",
+                          PANGO_WEIGHT_BOLD,
+                          "paragraph-background",
+                          "#c7cdd2",
+                          "pixels-above-lines",
+                          4,
+                          "pixels-below-lines",
+                          2,
+                          NULL);
+    create_tag_if_missing(buffer,
+                          "lmme-preview-table-separator-row",
+                          "foreground",
+                          "#7f8992",
+                          "paragraph-background",
+                          "#c7cdd2",
+                          "pixels-above-lines",
+                          0,
+                          "pixels-below-lines",
+                          0,
+                          NULL);
+    create_tag_if_missing(buffer,
+                          "lmme-preview-table-body-row",
+                          "paragraph-background",
+                          "#d0d5d9",
+                          "pixels-above-lines",
+                          1,
+                          "pixels-below-lines",
+                          1,
+                          NULL);
     create_tag_if_missing(buffer, "lmme-preview-hidden-marker", "invisible", TRUE, NULL);
     create_tag_if_missing(buffer, "lmme-preview-dim-marker", "foreground", "#6f7782", NULL);
-    create_tag_if_missing(buffer, "lmme-preview-active-marker", "foreground", "#6f7782", NULL);
+    create_tag_if_missing(buffer, active_marker_tag_name, "foreground", "#6f7782", NULL);
 }
 
 void
@@ -246,6 +285,12 @@ lmme_preview_clear_editable_preview(GtkTextBuffer *buffer)
         GtkTextTag *tag = gtk_text_tag_table_lookup(table, preview_tag_names[i]);
         if (tag != NULL) {
             gtk_text_buffer_remove_tag(buffer, tag, &start, &end);
+        }
+    }
+    {
+        GtkTextTag *active_marker = gtk_text_tag_table_lookup(table, active_marker_tag_name);
+        if (active_marker != NULL) {
+            gtk_text_buffer_remove_tag(buffer, active_marker, &start, &end);
         }
     }
     g_object_set_data(G_OBJECT(buffer), marker_cache_key, NULL);
@@ -274,7 +319,7 @@ apply_cached_marker_style_to_line(GtkTextBuffer *buffer, guint line, gboolean ac
     line_end_offset = (guint)gtk_text_iter_get_offset(&line_end);
     table = gtk_text_buffer_get_tag_table(buffer);
     hidden = gtk_text_tag_table_lookup(table, "lmme-preview-hidden-marker");
-    active_marker = gtk_text_tag_table_lookup(table, "lmme-preview-active-marker");
+    active_marker = gtk_text_tag_table_lookup(table, active_marker_tag_name);
     if (active_marker != NULL) {
         gtk_text_buffer_remove_tag(buffer, active_marker, &line_start, &line_end);
     }
