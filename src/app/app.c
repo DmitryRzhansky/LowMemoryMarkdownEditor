@@ -1,4 +1,5 @@
 #include "app/app.h"
+#include "app/app_test.h"
 
 #include "command/command_actions.h"
 #include "document/document.h"
@@ -9,6 +10,10 @@
 #include "infra/dialogs.h"
 #include "ui/window.h"
 #include "workspace/workspace.h"
+
+static void lmme_app_save_session(LmmeApp *app);
+static void lmme_app_cancel_pending_work(LmmeApp *app);
+static void lmme_app_destroy_runtime_ui(LmmeApp *app);
 
 static void
 on_activate(GtkApplication *gtk_app, gpointer user_data)
@@ -51,11 +56,36 @@ lmme_path_context_set(LmmePathContext *context,
     }
 }
 
-static void
-on_shutdown(GApplication *application, gpointer user_data)
+void
+lmme_app_clear_widget_refs(LmmeApp *app)
 {
-    LmmeApp *app = user_data;
-    (void)application;
+    if (app == NULL) {
+        return;
+    }
+
+    app->window = NULL;
+    app->root_box = NULL;
+    app->menu_bar = NULL;
+    app->toolbar = NULL;
+    app->notebook = NULL;
+    app->tree_view = NULL;
+    app->status_label = NULL;
+    app->breadcrumbs_label = NULL;
+    app->main_paned = NULL;
+    app->sidebar = NULL;
+    app->right_box = NULL;
+    app->search_bar = NULL;
+    app->find_entry = NULL;
+    app->replace_entry = NULL;
+    app->replace_button = NULL;
+}
+
+static void
+lmme_app_save_session(LmmeApp *app)
+{
+    if (app == NULL) {
+        return;
+    }
 
     if (app->window != NULL) {
         int width = 0;
@@ -86,6 +116,50 @@ on_shutdown(GApplication *application, gpointer user_data)
     } else if (save_result == LMME_CONFIG_SAVE_COMMITTED_NOT_DURABLE) {
         g_warning("Config was replaced, but durability could not be confirmed.");
     }
+}
+
+static void
+on_shutdown(GApplication *application, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+    (void)application;
+
+    lmme_app_save_session(app);
+}
+
+static void
+lmme_app_cancel_pending_work(LmmeApp *app)
+{
+    if (app == NULL) {
+        return;
+    }
+
+    lmme_command_actions_cancel_refresh(app);
+    if (app->preview_timeout_id != 0) {
+        g_source_remove(app->preview_timeout_id);
+        app->preview_timeout_id = 0;
+    }
+    if (app->documents != NULL) {
+        for (guint i = 0; i < app->documents->len; i++) {
+            lmme_document_cancel_pending_work(g_ptr_array_index(app->documents, i));
+        }
+    }
+}
+
+static void
+lmme_app_destroy_runtime_ui(LmmeApp *app)
+{
+    GtkWidget *window = NULL;
+
+    if (app == NULL) {
+        return;
+    }
+
+    window = app->window;
+    if (window != NULL) {
+        gtk_window_destroy(GTK_WINDOW(window));
+    }
+    lmme_app_clear_widget_refs(app);
 }
 
 static LmmeApp *
@@ -123,32 +197,15 @@ lmme_app_request_shutdown(LmmeApp *app)
     }
 
     app->shutdown_in_progress = TRUE;
-    app->scheduling_blocked = TRUE;
-    if (app->preview_timeout_id != 0) {
-        g_source_remove(app->preview_timeout_id);
-        app->preview_timeout_id = 0;
-    }
-    for (guint i = 0; i < app->documents->len; i++) {
-        LmmeDocument *doc = g_ptr_array_index(app->documents, i);
-        lmme_document_cancel_autosave(doc);
-        lmme_document_cancel_recovery(doc);
-        if (doc->image_insert_cancellable != NULL) {
-            g_cancellable_cancel(doc->image_insert_cancellable);
-        }
-    }
 
     if (!lmme_tabs_prepare_close_all(app)) {
         app->shutdown_in_progress = FALSE;
-        app->scheduling_blocked = FALSE;
-        lmme_tabs_resume_pending_saves(app);
         return FALSE;
     }
 
     g_autoptr(GError) commit_error = NULL;
     if (!lmme_tabs_commit_pending_dispositions(app, &commit_error)) {
         app->shutdown_in_progress = FALSE;
-        app->scheduling_blocked = FALSE;
-        lmme_tabs_resume_pending_saves(app);
         if (app->window != NULL) {
             lmme_dialog_error(GTK_WINDOW(app->window),
                               "Could not finish closing documents.",
@@ -157,6 +214,8 @@ lmme_app_request_shutdown(LmmeApp *app)
         return FALSE;
     }
 
+    app->scheduling_blocked = TRUE;
+    lmme_app_cancel_pending_work(app);
     g_application_quit(G_APPLICATION(app->gtk_app));
     return TRUE;
 }
@@ -168,10 +227,7 @@ lmme_app_free(LmmeApp *app)
         return;
     }
 
-    if (app->preview_timeout_id != 0) {
-        g_source_remove(app->preview_timeout_id);
-    }
-    lmme_command_actions_cancel_refresh(app);
+    lmme_app_cancel_pending_work(app);
 
     if (app->documents != NULL) {
         while (app->documents->len > 0) {
@@ -193,6 +249,7 @@ lmme_app_free(LmmeApp *app)
 int
 lmme_app_run(int argc, char **argv)
 {
+    /* gtk_app is the only strong owner of GtkApplication; app->gtk_app is borrowed. */
     GtkApplication *gtk_app = gtk_application_new("org.lmme.LowMemoryMarkdownEditor", G_APPLICATION_DEFAULT_FLAGS);
     LmmeApp *app = app_new(gtk_app);
     int status = 0;
@@ -202,7 +259,54 @@ lmme_app_run(int argc, char **argv)
 
     status = g_application_run(G_APPLICATION(gtk_app), argc, argv);
 
+    if (!app->scheduling_blocked) {
+        app->scheduling_blocked = TRUE;
+    }
+    lmme_app_cancel_pending_work(app);
+    lmme_app_destroy_runtime_ui(app);
+
+    app->gtk_app = NULL;
+    g_clear_object(&gtk_app);
+
     lmme_app_free(app);
-    g_object_unref(gtk_app);
     return status;
 }
+
+#ifdef LMME_TESTING
+
+void
+lmme_app_test_save_session(LmmeApp *app)
+{
+    lmme_app_save_session(app);
+}
+
+void
+lmme_app_test_cancel_pending_work(LmmeApp *app)
+{
+    lmme_app_cancel_pending_work(app);
+}
+
+void
+lmme_app_test_destroy_runtime_ui(LmmeApp *app)
+{
+    lmme_app_destroy_runtime_ui(app);
+}
+
+gboolean
+lmme_app_test_drain_main_context(guint max_iterations)
+{
+    guint iterations = 0;
+
+    while (iterations < max_iterations) {
+        if (!g_main_context_pending(NULL)) {
+            return TRUE;
+        }
+        if (!g_main_context_iteration(NULL, FALSE)) {
+            return TRUE;
+        }
+        iterations++;
+    }
+    return FALSE;
+}
+
+#endif

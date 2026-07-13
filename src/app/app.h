@@ -84,6 +84,7 @@ typedef struct _LmmeApp {
 
 int lmme_app_run(int argc, char **argv);
 gboolean lmme_app_request_shutdown(LmmeApp *app);
+void lmme_app_clear_widget_refs(LmmeApp *app);
 void lmme_app_free(LmmeApp *app);
 
 #endif

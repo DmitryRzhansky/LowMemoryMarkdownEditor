@@ -89,6 +89,7 @@ LmmeDocument *lmme_document_new(LmmeApp *app,
                                 const char *contents,
                                 const char *relative_title);
 void lmme_document_free(LmmeDocument *doc);
+void lmme_document_cancel_pending_work(LmmeDocument *doc);
 
 void lmme_document_set_save_state(LmmeDocument *doc, LmmeSaveState state);
 const char *lmme_document_save_state_label(const LmmeDocument *doc);

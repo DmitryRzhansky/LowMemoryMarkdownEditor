@@ -428,7 +428,7 @@ lmme_document_save_as(LmmeDocument *doc, const char *new_path, GError **error)
 }
 
 void
-lmme_document_free(LmmeDocument *doc)
+lmme_document_cancel_pending_work(LmmeDocument *doc)
 {
     if (doc == NULL) {
         return;
@@ -439,12 +439,23 @@ lmme_document_free(LmmeDocument *doc)
     lmme_external_conflict_cancel(doc);
     if (doc->stats_timeout_id != 0) {
         g_source_remove(doc->stats_timeout_id);
+        doc->stats_timeout_id = 0;
     }
-    lmme_document_file_monitor_detach(doc);
     if (doc->image_insert_cancellable != NULL) {
         g_cancellable_cancel(doc->image_insert_cancellable);
     }
     g_clear_object(&doc->image_insert_cancellable);
+}
+
+void
+lmme_document_free(LmmeDocument *doc)
+{
+    if (doc == NULL) {
+        return;
+    }
+
+    lmme_document_cancel_pending_work(doc);
+    lmme_document_file_monitor_detach(doc);
     g_clear_object(&doc->buffer);
     g_free(doc->path);
     g_free(doc->relative_path);

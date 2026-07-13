@@ -11,4 +11,10 @@ gboolean lmme_tabs_test_prepare_documents(GPtrArray *documents,
                                            gpointer user_data);
 gboolean lmme_tabs_test_commit_close_disposition(LmmeDocument *doc, GError **error);
 
+#ifdef LMME_TESTING
+void lmme_tabs_test_set_prepare_close_override(LmmeTabsTestPrepareFunc prepare,
+                                               gpointer user_data);
+void lmme_tabs_test_clear_prepare_close_override(void);
+#endif
+
 #endif

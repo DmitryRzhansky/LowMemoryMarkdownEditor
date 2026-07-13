@@ -13,6 +13,11 @@
 #include "ui/window.h"
 #include "workspace/workspace.h"
 
+#ifdef LMME_TESTING
+static LmmeTabsTestPrepareFunc tabs_test_prepare_close_override = NULL;
+static gpointer tabs_test_prepare_close_override_data = NULL;
+#endif
+
 static void
 on_close_tab_clicked(GtkButton *button, gpointer user_data)
 {
@@ -341,6 +346,11 @@ static gboolean
 prepare_document_close_adapter(LmmeDocument *doc, gpointer user_data)
 {
     (void)user_data;
+#ifdef LMME_TESTING
+    if (tabs_test_prepare_close_override != NULL) {
+        return tabs_test_prepare_close_override(doc, tabs_test_prepare_close_override_data);
+    }
+#endif
     return prepare_document_close(doc);
 }
 
@@ -755,3 +765,22 @@ lmme_tabs_open_paths(LmmeApp *app)
 
     return paths;
 }
+
+#ifdef LMME_TESTING
+
+void
+lmme_tabs_test_set_prepare_close_override(LmmeTabsTestPrepareFunc prepare,
+                                          gpointer user_data)
+{
+    tabs_test_prepare_close_override = prepare;
+    tabs_test_prepare_close_override_data = user_data;
+}
+
+void
+lmme_tabs_test_clear_prepare_close_override(void)
+{
+    tabs_test_prepare_close_override = NULL;
+    tabs_test_prepare_close_override_data = NULL;
+}
+
+#endif

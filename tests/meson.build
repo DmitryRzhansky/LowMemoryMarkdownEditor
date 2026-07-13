@@ -12,7 +12,6 @@ test_sources = {
   'test_file_io': 'test_file_io.c',
   'test_file_monitor_state': 'test_file_monitor_state.c',
   'test_document_lifecycle': 'test_document_lifecycle.c',
-  'test_app_lifecycle': 'test_app_lifecycle.c',
   'test_document_paths': 'test_document_paths.c',
   'file_tree_refresh': 'test_file_tree_refresh.c',
   'file_tree_crash_repro': 'test_file_tree_crash_repro.c',
@@ -29,6 +28,17 @@ foreach test_name, test_source : test_sources
   )
   test(test_name, exe)
 endforeach
+
+test_app_lifecycle = executable(
+  'test_app_lifecycle',
+  'test_app_lifecycle.c',
+  resources,
+  link_with: lmme_test_lib,
+  dependencies: deps,
+  include_directories: include_directories('../src'),
+  c_args: common_args + ['-DLMME_TESTING'],
+)
+test('test_app_lifecycle', test_app_lifecycle)
 
 preview_benchmark = executable(
   'benchmark_preview',

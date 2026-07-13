@@ -78,6 +78,16 @@ on_window_close_request(GtkWindow *window, gpointer user_data)
 }
 
 static void
+on_window_destroy(GtkWindow *window, gpointer user_data)
+{
+    LmmeApp *app = user_data;
+
+    if (app != NULL && app->window == GTK_WIDGET(window)) {
+        lmme_app_clear_widget_refs(app);
+    }
+}
+
+static void
 restore_recovery_files(LmmeApp *app)
 {
     g_autoptr(GError) error = NULL;
@@ -162,6 +172,7 @@ lmme_window_build(LmmeApp *app)
 
     app->window = gtk_application_window_new(app->gtk_app);
     g_signal_connect(app->window, "close-request", G_CALLBACK(on_window_close_request), app);
+    g_signal_connect(app->window, "destroy", G_CALLBACK(on_window_destroy), app);
     gtk_window_set_title(GTK_WINDOW(app->window), "LowMemoryMarkdownEditor");
     gtk_window_set_default_size(GTK_WINDOW(app->window), app->config.window_width, app->config.window_height);
     if (app->config.window_maximized) {
