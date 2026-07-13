@@ -131,8 +131,8 @@ lmme_app_request_shutdown(LmmeApp *app)
         LmmeDocument *doc = g_ptr_array_index(app->documents, i);
         lmme_document_cancel_autosave(doc);
         lmme_document_cancel_recovery(doc);
-        if (doc->clipboard_cancellable != NULL) {
-            g_cancellable_cancel(doc->clipboard_cancellable);
+        if (doc->image_insert_cancellable != NULL) {
+            g_cancellable_cancel(doc->image_insert_cancellable);
         }
     }
 

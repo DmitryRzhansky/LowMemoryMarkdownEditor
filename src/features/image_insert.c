@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 
 #include "features/image_insert.h"
+#include "features/image_insert_test.h"
 
 #include "app/app.h"
 #include "document/tabs.h"
@@ -19,8 +20,11 @@
 typedef struct {
     LmmeApp *app;
     guint64 document_id;
-    GCancellable *cancellable;
+    char *workspace_path;
     char *destination_path;
+    GCancellable *cancellable;
+    LmmeImageInsertState state;
+    gboolean destination_created_by_request;
 } LmmeImageInsertRequest;
 
 typedef struct {
@@ -112,8 +116,53 @@ image_insert_request_free(LmmeImageInsertRequest *request)
         return;
     }
     g_clear_object(&request->cancellable);
+    g_free(request->workspace_path);
     g_free(request->destination_path);
     g_free(request);
+}
+
+gboolean
+lmme_image_insert_should_rollback_destination(LmmeImageInsertState state,
+                                              gboolean destination_created_by_request)
+{
+    return state == LMME_IMAGE_INSERT_FILE_CREATED && destination_created_by_request;
+}
+
+void
+lmme_image_insert_request_mark_file_created(LmmeImageInsertState *state,
+                                            gboolean *destination_created_by_request,
+                                            gboolean destination_existed_before)
+{
+    g_return_if_fail(state != NULL);
+    g_return_if_fail(destination_created_by_request != NULL);
+
+    *state = LMME_IMAGE_INSERT_FILE_CREATED;
+    *destination_created_by_request = !destination_existed_before;
+}
+
+void
+lmme_image_insert_request_mark_committed(LmmeImageInsertState *state)
+{
+    g_return_if_fail(state != NULL);
+    *state = LMME_IMAGE_INSERT_COMMITTED;
+}
+
+void
+lmme_image_insert_rollback_destination_if_needed(LmmeImageInsertState *state,
+                                                 gboolean *destination_created_by_request,
+                                                 const char *destination_path)
+{
+    g_return_if_fail(state != NULL);
+    g_return_if_fail(destination_created_by_request != NULL);
+
+    if (!lmme_image_insert_should_rollback_destination(*state, *destination_created_by_request)) {
+        return;
+    }
+    if (destination_path != NULL) {
+        g_unlink(destination_path);
+    }
+    *destination_created_by_request = FALSE;
+    *state = LMME_IMAGE_INSERT_FINISHED;
 }
 
 static void
@@ -332,51 +381,201 @@ insert_link_for_dest(LmmeDocument *doc, const char *dest_path)
     return TRUE;
 }
 
-gboolean
-lmme_image_insert_for_document(LmmeDocument *doc, const char *source_path)
+static gboolean
+image_insert_document_is_valid(LmmeDocument *doc, GtkWindow *parent)
 {
     LmmeApp *app = doc != NULL ? doc->app : NULL;
-    GtkWindow *parent = app != NULL && app->window != NULL ? GTK_WINDOW(app->window) : NULL;
-    g_autofree char *img_dir = NULL;
-    g_autofree char *filename = NULL;
-    g_autofree char *dest_path = NULL;
-    g_autoptr(GDateTime) now = NULL;
-    g_autoptr(GFile) source = NULL;
-    g_autoptr(GFile) dest = NULL;
-    g_autoptr(GError) error = NULL;
 
-    if (doc == NULL || app == NULL ||
-        app->workspace == NULL ||
+    if (doc == NULL || app == NULL || app->workspace == NULL ||
         !lmme_path_has_markdown_extension(doc->path) ||
         !lmme_path_is_inside(app->workspace->path, doc->path)) {
         lmme_dialog_error(parent, "Could not insert image.", "Open a Markdown file in a workspace first.");
         return FALSE;
     }
-    if (!lmme_path_has_image_extension(source_path)) {
-        lmme_dialog_error(GTK_WINDOW(app->window), "Unsupported image format.", NULL);
-        return FALSE;
-    }
-    if (!ensure_img_dir(app, &img_dir, &error)) {
-        lmme_dialog_error(GTK_WINDOW(app->window), "Could not create img folder.", error != NULL ? error->message : NULL);
+    return TRUE;
+}
+
+static gboolean
+image_insert_request_prepare_destination(LmmeImageInsertRequest *request,
+                                         LmmeDocument *doc,
+                                         const char *extension,
+                                         GError **error)
+{
+    LmmeApp *app = doc->app;
+    g_autofree char *img_dir = NULL;
+    g_autofree char *filename = NULL;
+    g_autoptr(GDateTime) now = NULL;
+
+    g_return_val_if_fail(request != NULL, FALSE);
+    g_return_val_if_fail(doc != NULL, FALSE);
+    g_return_val_if_fail(extension != NULL, FALSE);
+
+    if (!ensure_img_dir(app, &img_dir, error)) {
         return FALSE;
     }
 
     now = g_date_time_new_now_local();
-    filename = lmme_generate_image_filename(img_dir, doc->path, image_extension_for_path(source_path), now);
-    dest_path = g_build_filename(img_dir, filename, NULL);
-    source = g_file_new_for_path(source_path);
-    dest = g_file_new_for_path(dest_path);
-
-    if (!g_file_copy(source, dest, G_FILE_COPY_NONE, NULL, NULL, NULL, &error)) {
-        lmme_dialog_error(GTK_WINDOW(app->window), "Could not copy image.", error != NULL ? error->message : NULL);
-        return FALSE;
-    }
-
-    if (!insert_link_for_dest(doc, dest_path)) {
-        g_file_delete(dest, NULL, NULL);
-        return FALSE;
-    }
+    filename = lmme_generate_image_filename(img_dir, doc->path, extension, now);
+    g_free(request->destination_path);
+    request->destination_path = g_build_filename(img_dir, filename, NULL);
     return TRUE;
+}
+
+static gboolean
+image_insert_request_commit_link(LmmeImageInsertRequest *request, LmmeDocument *doc)
+{
+    g_return_val_if_fail(request != NULL, FALSE);
+
+    if (!insert_link_for_dest(doc, request->destination_path)) {
+        return FALSE;
+    }
+    lmme_image_insert_request_mark_committed(&request->state);
+    return TRUE;
+}
+
+static gboolean
+image_insert_request_is_current(LmmeDocument *doc, const LmmeImageInsertRequest *request)
+{
+    return doc != NULL &&
+           request != NULL &&
+           request->cancellable != NULL &&
+           doc->image_insert_cancellable == request->cancellable &&
+           !g_cancellable_is_cancelled(request->cancellable);
+}
+
+static void
+image_insert_request_clear_document_cancellable(LmmeDocument *doc,
+                                                const LmmeImageInsertRequest *request)
+{
+    if (doc != NULL && request != NULL && request->cancellable != NULL &&
+        doc->image_insert_cancellable == request->cancellable) {
+        g_clear_object(&doc->image_insert_cancellable);
+    }
+}
+
+static LmmeImageInsertRequest *
+image_insert_request_begin_async(LmmeDocument *doc)
+{
+    LmmeImageInsertRequest *request = NULL;
+
+    g_return_val_if_fail(doc != NULL, NULL);
+
+    if (doc->image_insert_cancellable != NULL) {
+        g_cancellable_cancel(doc->image_insert_cancellable);
+        g_clear_object(&doc->image_insert_cancellable);
+    }
+    doc->image_insert_cancellable = g_cancellable_new();
+
+    request = g_new0(LmmeImageInsertRequest, 1);
+    request->app = doc->app;
+    request->document_id = doc->id;
+    request->workspace_path = g_strdup(doc->app->workspace->path);
+    request->cancellable = g_object_ref(doc->image_insert_cancellable);
+    request->state = LMME_IMAGE_INSERT_PREPARING;
+    return request;
+}
+
+static gboolean
+image_insert_copy_source_for_request(LmmeDocument *doc,
+                                     LmmeImageInsertRequest *request,
+                                     const char *source_path,
+                                     GtkWindow *parent,
+                                     GError **error)
+{
+    g_autoptr(GFile) source = NULL;
+    g_autoptr(GFile) dest = NULL;
+    gboolean destination_existed = FALSE;
+
+    g_return_val_if_fail(doc != NULL, FALSE);
+    g_return_val_if_fail(request != NULL, FALSE);
+    g_return_val_if_fail(source_path != NULL, FALSE);
+
+    if (!image_insert_document_is_valid(doc, parent)) {
+        return FALSE;
+    }
+    if (!lmme_path_has_image_extension(source_path)) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Unsupported image format.");
+        return FALSE;
+    }
+    if (!image_insert_request_prepare_destination(request,
+                                                  doc,
+                                                  image_extension_for_path(source_path),
+                                                  error)) {
+        return FALSE;
+    }
+
+    destination_existed = g_file_test(request->destination_path, G_FILE_TEST_EXISTS);
+    source = g_file_new_for_path(source_path);
+    dest = g_file_new_for_path(request->destination_path);
+    if (!g_file_copy(source, dest, G_FILE_COPY_NONE, NULL, NULL, NULL, error)) {
+        return FALSE;
+    }
+
+    lmme_image_insert_request_mark_file_created(&request->state,
+                                                &request->destination_created_by_request,
+                                                destination_existed);
+    return TRUE;
+}
+
+static gboolean
+image_insert_finish_copy_request(LmmeDocument *doc,
+                               LmmeImageInsertRequest *request,
+                               GtkWindow *parent)
+{
+    g_return_val_if_fail(doc != NULL, FALSE);
+    g_return_val_if_fail(request != NULL, FALSE);
+
+    if (!image_insert_request_commit_link(request, doc)) {
+        lmme_image_insert_rollback_destination_if_needed(&request->state,
+                                                         &request->destination_created_by_request,
+                                                         request->destination_path);
+        return FALSE;
+    }
+    request->state = LMME_IMAGE_INSERT_FINISHED;
+    (void)parent;
+    return TRUE;
+}
+
+gboolean
+lmme_image_insert_for_document(LmmeDocument *doc, const char *source_path)
+{
+    LmmeApp *app = doc != NULL ? doc->app : NULL;
+    GtkWindow *parent = app != NULL && app->window != NULL ? GTK_WINDOW(app->window) : NULL;
+    g_autoptr(GError) error = NULL;
+    LmmeImageInsertRequest request = {
+        .app = app,
+        .state = LMME_IMAGE_INSERT_PREPARING,
+    };
+    gboolean success = FALSE;
+
+    if (doc == NULL) {
+        lmme_dialog_error(parent, "Could not insert image.", "Open a Markdown file in a workspace first.");
+        return FALSE;
+    }
+
+    request.document_id = doc->id;
+    request.workspace_path = g_strdup(app->workspace != NULL ? app->workspace->path : NULL);
+
+    if (!image_insert_copy_source_for_request(doc, &request, source_path, parent, &error)) {
+        if (error != NULL && g_error_matches(error, G_FILE_ERROR, G_FILE_ERROR_INVAL)) {
+            lmme_dialog_error(parent, "Unsupported image format.", NULL);
+        } else if (error != NULL && g_strstr_len(error->message, -1, "img folder") != NULL) {
+            lmme_dialog_error(parent, "Could not create img folder.", error->message);
+        } else if (error != NULL) {
+            lmme_dialog_error(parent, "Could not copy image.", error->message);
+        }
+        lmme_image_insert_rollback_destination_if_needed(&request.state,
+                                                         &request.destination_created_by_request,
+                                                         request.destination_path);
+        g_free(request.workspace_path);
+        g_free(request.destination_path);
+        return FALSE;
+    }
+
+    success = image_insert_finish_copy_request(doc, &request, parent);
+    g_free(request.workspace_path);
+    g_free(request.destination_path);
+    return success;
 }
 
 gboolean
@@ -403,22 +602,33 @@ on_texture_saved(GObject *source_object, GAsyncResult *result, gpointer user_dat
     gboolean saved = lmme_image_texture_save_png_finish(GDK_TEXTURE(source_object),
                                                         result,
                                                         &error);
-    gboolean is_current = doc != NULL && doc->clipboard_cancellable == request->cancellable;
+    gboolean is_current = image_insert_request_is_current(doc, request);
 
-    if (saved && is_current && !g_cancellable_is_cancelled(request->cancellable)) {
-        if (!insert_link_for_dest(doc, request->destination_path)) {
-            g_unlink(request->destination_path);
+    if (saved) {
+        lmme_image_insert_request_mark_file_created(&request->state,
+                                                    &request->destination_created_by_request,
+                                                    FALSE);
+    }
+
+    if (saved && is_current) {
+        if (!image_insert_request_commit_link(request, doc)) {
+            lmme_image_insert_rollback_destination_if_needed(&request->state,
+                                                               &request->destination_created_by_request,
+                                                               request->destination_path);
+        } else {
+            request->state = LMME_IMAGE_INSERT_FINISHED;
         }
     } else if (saved) {
-        g_unlink(request->destination_path);
+        lmme_image_insert_rollback_destination_if_needed(&request->state,
+                                                         &request->destination_created_by_request,
+                                                         request->destination_path);
     } else if (error == NULL || !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
         lmme_dialog_error(GTK_WINDOW(request->app->window),
                           "Could not save image.",
                           error != NULL ? error->message : NULL);
     }
-    if (is_current) {
-        g_clear_object(&doc->clipboard_cancellable);
-    }
+
+    image_insert_request_clear_document_cancellable(doc, request);
     image_insert_request_free(request);
 }
 
@@ -428,26 +638,18 @@ save_texture_to_img_async(LmmeDocument *doc,
                           LmmeImageInsertRequest *request)
 {
     LmmeApp *app = doc->app;
-    g_autofree char *img_dir = NULL;
-    g_autofree char *filename = NULL;
-    g_autoptr(GDateTime) now = NULL;
     g_autoptr(GError) error = NULL;
 
-    if (app->workspace == NULL ||
-        !lmme_path_has_markdown_extension(doc->path) ||
-        !lmme_path_is_inside(app->workspace->path, doc->path)) {
-        lmme_dialog_error(GTK_WINDOW(app->window), "Could not insert image.", "Open a Markdown file in a workspace first.");
+    if (!image_insert_document_is_valid(doc, GTK_WINDOW(app->window))) {
+        return FALSE;
+    }
+    if (!image_insert_request_prepare_destination(request, doc, "png", &error)) {
+        lmme_dialog_error(GTK_WINDOW(app->window),
+                          "Could not create img folder.",
+                          error != NULL ? error->message : NULL);
         return FALSE;
     }
 
-    if (!ensure_img_dir(app, &img_dir, &error)) {
-        lmme_dialog_error(GTK_WINDOW(app->window), "Could not create img folder.", error != NULL ? error->message : NULL);
-        return FALSE;
-    }
-
-    now = g_date_time_new_now_local();
-    filename = lmme_generate_image_filename(img_dir, doc->path, "png", now);
-    request->destination_path = g_build_filename(img_dir, filename, NULL);
     lmme_image_texture_save_png_async(texture,
                                       request->destination_path,
                                       request->cancellable,
@@ -469,20 +671,23 @@ on_clipboard_texture_ready(GObject *source_object, GAsyncResult *result, gpointe
         if (error == NULL || !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
             lmme_dialog_error(GTK_WINDOW(request->app->window), "Clipboard does not contain an image.", NULL);
         }
+        image_insert_request_clear_document_cancellable(doc, request);
         image_insert_request_free(request);
         return;
     }
 
-    if (doc != NULL && doc->clipboard_cancellable == request->cancellable &&
-        !g_cancellable_is_cancelled(request->cancellable)) {
+    if (doc != NULL && image_insert_request_is_current(doc, request)) {
         if (save_texture_to_img_async(doc, texture, request)) {
             request = NULL;
         } else {
-            g_clear_object(&doc->clipboard_cancellable);
+            image_insert_request_clear_document_cancellable(doc, request);
         }
     }
     g_object_unref(texture);
-    image_insert_request_free(request);
+    if (request != NULL) {
+        image_insert_request_clear_document_cancellable(doc, request);
+        image_insert_request_free(request);
+    }
 }
 
 static gboolean
@@ -508,17 +713,13 @@ on_editor_key_pressed(GtkEventControllerKey *controller,
         return FALSE;
     }
 
-    if (doc->clipboard_cancellable != NULL) {
-        g_cancellable_cancel(doc->clipboard_cancellable);
-        g_clear_object(&doc->clipboard_cancellable);
+    request = image_insert_request_begin_async(doc);
+    if (request == NULL) {
+        return FALSE;
     }
-    doc->clipboard_cancellable = g_cancellable_new();
-    request = g_new0(LmmeImageInsertRequest, 1);
-    request->app = doc->app;
-    request->document_id = doc->id;
-    request->cancellable = g_object_ref(doc->clipboard_cancellable);
+
     gdk_clipboard_read_texture_async(clipboard,
-                                     doc->clipboard_cancellable,
+                                     doc->image_insert_cancellable,
                                      on_clipboard_texture_ready,
                                      request);
     return TRUE;

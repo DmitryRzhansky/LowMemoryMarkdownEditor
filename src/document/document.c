@@ -435,10 +435,10 @@ lmme_document_free(LmmeDocument *doc)
         g_source_remove(doc->stats_timeout_id);
     }
     lmme_document_file_monitor_detach(doc);
-    if (doc->clipboard_cancellable != NULL) {
-        g_cancellable_cancel(doc->clipboard_cancellable);
+    if (doc->image_insert_cancellable != NULL) {
+        g_cancellable_cancel(doc->image_insert_cancellable);
     }
-    g_clear_object(&doc->clipboard_cancellable);
+    g_clear_object(&doc->image_insert_cancellable);
     g_clear_object(&doc->buffer);
     g_free(doc->path);
     g_free(doc->relative_path);

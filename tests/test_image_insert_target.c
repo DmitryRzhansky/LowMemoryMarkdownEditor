@@ -5,6 +5,7 @@
 #include "document/document.h"
 #include "document/tabs.h"
 #include "features/image_insert.h"
+#include "features/image_insert_test.h"
 
 typedef struct {
     GMainLoop *loop;
@@ -127,6 +128,60 @@ test_texture_png_save_honors_cancellation(void)
     g_rmdir(directory);
 }
 
+static void
+test_rollback_requires_file_created_state(void)
+{
+    g_assert_true(lmme_image_insert_should_rollback_destination(LMME_IMAGE_INSERT_FILE_CREATED, TRUE));
+    g_assert_false(lmme_image_insert_should_rollback_destination(LMME_IMAGE_INSERT_FILE_CREATED, FALSE));
+    g_assert_false(lmme_image_insert_should_rollback_destination(LMME_IMAGE_INSERT_COMMITTED, TRUE));
+    g_assert_false(lmme_image_insert_should_rollback_destination(LMME_IMAGE_INSERT_PREPARING, TRUE));
+}
+
+static void
+test_rollback_deletes_only_uncommitted_destination(void)
+{
+    g_autofree char *directory = g_dir_make_tmp("lmme-image-rollback-XXXXXX", NULL);
+    g_autofree char *path = g_build_filename(directory, "orphan.png", NULL);
+    LmmeImageInsertState state = LMME_IMAGE_INSERT_FILE_CREATED;
+    gboolean created_by_request = TRUE;
+
+    g_assert_true(g_file_set_contents(path, "png", 3, NULL));
+    lmme_image_insert_rollback_destination_if_needed(&state, &created_by_request, path);
+    g_assert_false(g_file_test(path, G_FILE_TEST_EXISTS));
+    g_assert_cmpint(state, ==, LMME_IMAGE_INSERT_FINISHED);
+    g_assert_false(created_by_request);
+
+    g_assert_true(g_file_set_contents(path, "png", 3, NULL));
+    state = LMME_IMAGE_INSERT_COMMITTED;
+    created_by_request = TRUE;
+    lmme_image_insert_rollback_destination_if_needed(&state, &created_by_request, path);
+    g_assert_true(g_file_test(path, G_FILE_TEST_EXISTS));
+    g_assert_cmpint(state, ==, LMME_IMAGE_INSERT_COMMITTED);
+
+    g_unlink(path);
+    g_rmdir(directory);
+}
+
+static void
+test_mark_file_created_tracks_destination_origin(void)
+{
+    LmmeImageInsertState state = LMME_IMAGE_INSERT_PREPARING;
+    gboolean created_by_request = FALSE;
+
+    lmme_image_insert_request_mark_file_created(&state, &created_by_request, FALSE);
+    g_assert_cmpint(state, ==, LMME_IMAGE_INSERT_FILE_CREATED);
+    g_assert_true(created_by_request);
+
+    state = LMME_IMAGE_INSERT_PREPARING;
+    created_by_request = FALSE;
+    lmme_image_insert_request_mark_file_created(&state, &created_by_request, TRUE);
+    g_assert_cmpint(state, ==, LMME_IMAGE_INSERT_FILE_CREATED);
+    g_assert_false(created_by_request);
+
+    lmme_image_insert_request_mark_committed(&state);
+    g_assert_cmpint(state, ==, LMME_IMAGE_INSERT_COMMITTED);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -135,5 +190,8 @@ main(int argc, char **argv)
     g_test_add_func("/image-insert/link", test_markdown_link_is_workspace_relative);
     g_test_add_func("/image-insert/png-save", test_texture_png_save_is_async_and_valid);
     g_test_add_func("/image-insert/png-cancel", test_texture_png_save_honors_cancellation);
+    g_test_add_func("/image-insert/rollback-state", test_rollback_requires_file_created_state);
+    g_test_add_func("/image-insert/rollback-file", test_rollback_deletes_only_uncommitted_destination);
+    g_test_add_func("/image-insert/mark-state", test_mark_file_created_tracks_destination_origin);
     return g_test_run();
 }

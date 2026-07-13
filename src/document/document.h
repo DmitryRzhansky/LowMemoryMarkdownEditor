@@ -77,7 +77,7 @@ struct _LmmeDocument {
     LmmeExternalConflictState external_conflict_state;
     gboolean external_change_pending;
     guint64 external_change_generation;
-    GCancellable *clipboard_cancellable;
+    GCancellable *image_insert_cancellable;
 };
 
 /*
