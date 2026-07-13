@@ -74,6 +74,7 @@ typedef struct _LmmeApp {
     gboolean preview_enabled;
     gboolean focus_mode;
     guint preview_timeout_id;
+    guint command_refresh_source_id;
 
     GPtrArray *documents;
 

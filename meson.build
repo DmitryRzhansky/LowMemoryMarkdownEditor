@@ -114,6 +114,14 @@ lmme_lib = static_library(
   include_directories: include_directories('src'),
 )
 
+lmme_test_lib = static_library(
+  'lmme-core-test',
+  core_sources,
+  dependencies: deps,
+  c_args: common_args + ['-DLMME_TESTING'],
+  include_directories: include_directories('src'),
+)
+
 executable(
   'lmme',
   'src/main.c',

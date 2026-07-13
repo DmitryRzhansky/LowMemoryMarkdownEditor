@@ -1,5 +1,6 @@
 #include "app/app.h"
 
+#include "command/command_actions.h"
 #include "document/document.h"
 #include "document/document_autosave.h"
 #include "document/recovery.h"
@@ -170,6 +171,7 @@ lmme_app_free(LmmeApp *app)
     if (app->preview_timeout_id != 0) {
         g_source_remove(app->preview_timeout_id);
     }
+    lmme_command_actions_cancel_refresh(app);
 
     if (app->documents != NULL) {
         while (app->documents->len > 0) {

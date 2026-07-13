@@ -3,36 +3,46 @@
 #include "command/command_handlers.h"
 #include "command/command_registry.h"
 #include "command/command_enabled.h"
+#include "command/command_actions_test.h"
 
 #include "app/app.h"
 
-static guint command_actions_refresh_source_id = 0;
-static LmmeApp *command_actions_refresh_app = NULL;
+#ifdef LMME_TESTING
+static guint command_actions_test_refresh_count = 0;
+#endif
 
 static gboolean
 command_actions_refresh_idle_cb(gpointer user_data)
 {
     LmmeApp *app = user_data;
 
-    command_actions_refresh_source_id = 0;
-    command_actions_refresh_app = NULL;
     if (app != NULL) {
+        app->command_refresh_source_id = 0;
         lmme_command_actions_refresh(app);
     }
     return G_SOURCE_REMOVE;
 }
 
 void
+lmme_command_actions_cancel_refresh(LmmeApp *app)
+{
+    if (app == NULL || app->command_refresh_source_id == 0) {
+        return;
+    }
+    g_source_remove(app->command_refresh_source_id);
+    app->command_refresh_source_id = 0;
+}
+
+void
 lmme_command_actions_request_refresh(LmmeApp *app)
 {
-    if (app == NULL || app->gtk_app == NULL) {
+    if (app == NULL || app->gtk_app == NULL || app->scheduling_blocked) {
         return;
     }
-    command_actions_refresh_app = app;
-    if (command_actions_refresh_source_id != 0) {
+    if (app->command_refresh_source_id != 0) {
         return;
     }
-    command_actions_refresh_source_id = g_idle_add(command_actions_refresh_idle_cb, app);
+    app->command_refresh_source_id = g_idle_add(command_actions_refresh_idle_cb, app);
 }
 
 static void
@@ -129,6 +139,10 @@ lmme_command_actions_refresh(LmmeApp *app)
         return;
     }
 
+#ifdef LMME_TESTING
+    command_actions_test_refresh_count++;
+#endif
+
     commands = lmme_command_registry_get_all(&count);
     lmme_command_context_fill_from_app(&context, app);
     for (gsize i = 0; i < count; i++) {
@@ -148,3 +162,19 @@ lmme_command_actions_refresh(LmmeApp *app)
         g_simple_action_set_enabled(G_SIMPLE_ACTION(action), enabled);
     }
 }
+
+#ifdef LMME_TESTING
+
+guint
+lmme_command_actions_test_refresh_count(void)
+{
+    return command_actions_test_refresh_count;
+}
+
+void
+lmme_command_actions_test_reset_refresh_count(void)
+{
+    command_actions_test_refresh_count = 0;
+}
+
+#endif
