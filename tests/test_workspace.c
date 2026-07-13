@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include "workspace/workspace.h"
+#include "workspace/workspace_delete_test.h"
 
 static void
 test_recursive_delete_and_root_guard(void)
@@ -15,12 +16,15 @@ test_recursive_delete_and_root_guard(void)
     g_autofree char *file = g_build_filename(nested, "note.md", NULL);
     g_autoptr(GError) error = NULL;
     LmmeWorkspace *workspace = lmme_workspace_new(root);
+    LmmeWorkspaceDeleteOutcome outcome = {0};
 
     g_assert_cmpint(g_mkdir_with_parents(nested, 0700), ==, 0);
     g_assert_true(g_file_set_contents(file, "text", -1, NULL));
-    g_assert_true(lmme_workspace_delete_path(workspace, folder, NULL));
+    outcome = lmme_workspace_delete_path(workspace, folder, NULL);
+    g_assert_cmpint(outcome.result, ==, LMME_WORKSPACE_DELETE_COMPLETE);
     g_assert_false(g_file_test(folder, G_FILE_TEST_EXISTS));
-    g_assert_false(lmme_workspace_delete_path(workspace, root, &error));
+    outcome = lmme_workspace_delete_path(workspace, root, &error);
+    g_assert_cmpint(outcome.result, ==, LMME_WORKSPACE_DELETE_UNCHANGED);
     g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_PERM);
 
     lmme_workspace_free(workspace);
@@ -38,7 +42,9 @@ test_symlink_delete_does_not_follow_target(void)
 
     g_assert_true(g_file_set_contents(outside_file, "keep", -1, NULL));
     g_assert_cmpint(symlink(outside, link), ==, 0);
-    g_assert_true(lmme_workspace_delete_path(workspace, link, NULL));
+    g_assert_cmpint(lmme_workspace_delete_path(workspace, link, NULL).result,
+                    ==,
+                    LMME_WORKSPACE_DELETE_COMPLETE);
     g_assert_false(g_file_test(link, G_FILE_TEST_EXISTS));
     g_assert_true(g_file_test(outside_file, G_FILE_TEST_IS_REGULAR));
 
@@ -63,7 +69,9 @@ test_intermediate_symlink_cannot_escape_workspace(void)
 
     g_assert_true(g_file_set_contents(outside_file, "keep", -1, NULL));
     g_assert_cmpint(symlink(outside, link), ==, 0);
-    g_assert_false(lmme_workspace_delete_path(workspace, escaped_path, &error));
+    g_assert_cmpint(lmme_workspace_delete_path(workspace, escaped_path, &error).result,
+                    ==,
+                    LMME_WORKSPACE_DELETE_UNCHANGED);
     g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_PERM);
     g_assert_true(g_file_test(outside_file, G_FILE_TEST_IS_REGULAR));
 
@@ -201,7 +209,9 @@ test_large_workspace_is_loaded_lazily(void)
 
     for (guint i = 0; i < workspace->root->children->len; i++) {
         LmmeFileNode *directory = g_ptr_array_index(workspace->root->children, i);
-        g_assert_true(lmme_workspace_delete_path(workspace, directory->path, NULL));
+        LmmeWorkspaceDeleteOutcome outcome =
+            lmme_workspace_delete_path(workspace, directory->path, NULL);
+        g_assert_cmpint(outcome.result, ==, LMME_WORKSPACE_DELETE_COMPLETE);
     }
     lmme_workspace_free(workspace);
     g_rmdir(root);
@@ -232,6 +242,59 @@ test_scanned_workspace_candidate_is_committed_only_on_success(void)
     g_rmdir(root);
 }
 
+static void
+test_delete_empty_directory(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-delete-empty-XXXXXX", NULL);
+    g_autofree char *folder = g_build_filename(root, "empty", NULL);
+    LmmeWorkspace *workspace = lmme_workspace_new(root);
+    LmmeWorkspaceDeleteOutcome outcome = {0};
+
+    g_assert_cmpint(g_mkdir(folder, 0700), ==, 0);
+    outcome = lmme_workspace_delete_path(workspace, folder, NULL);
+    g_assert_cmpint(outcome.result, ==, LMME_WORKSPACE_DELETE_COMPLETE);
+    g_assert_false(outcome.target_still_exists);
+
+    lmme_workspace_free(workspace);
+    g_rmdir(root);
+}
+
+static void
+test_delete_partial_failure_reports_outcome(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-delete-partial-XXXXXX", NULL);
+    g_autofree char *folder = g_build_filename(root, "target", NULL);
+    g_autofree char *file_a = g_build_filename(folder, "a.md", NULL);
+    g_autofree char *file_b = g_build_filename(folder, "b.md", NULL);
+    g_autoptr(GError) partial_error = NULL;
+    g_autoptr(GError) unchanged_error = NULL;
+    LmmeWorkspace *workspace = lmme_workspace_new(root);
+    LmmeWorkspaceDeleteOutcome outcome = {0};
+
+    g_assert_cmpint(g_mkdir(folder, 0700), ==, 0);
+    g_assert_true(g_file_set_contents(file_a, "a", -1, NULL));
+    g_assert_true(g_file_set_contents(file_b, "b", -1, NULL));
+
+    lmme_workspace_delete_test_fail_at(1, 1);
+    outcome = lmme_workspace_delete_path(workspace, folder, &partial_error);
+    lmme_workspace_delete_test_reset();
+    g_assert_cmpint(outcome.result, ==, LMME_WORKSPACE_DELETE_PARTIAL);
+    g_assert_cmpuint(outcome.deleted_entries, ==, 1);
+    g_assert_true(outcome.target_still_exists);
+    g_assert_nonnull(partial_error);
+
+    lmme_workspace_delete_test_fail_at(0, 1);
+    outcome = lmme_workspace_delete_path(workspace, folder, &unchanged_error);
+    lmme_workspace_delete_test_reset();
+    g_assert_cmpint(outcome.result, ==, LMME_WORKSPACE_DELETE_UNCHANGED);
+    g_assert_cmpuint(outcome.deleted_entries, ==, 0);
+    g_assert_nonnull(unchanged_error);
+
+    lmme_workspace_free(workspace);
+    g_rmdir(folder);
+    g_rmdir(root);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -242,6 +305,8 @@ main(int argc, char **argv)
     g_test_add_func("/workspace/rename/committed", test_rename_is_committed_before_result);
     g_test_add_func("/workspace/save-target/containment", test_save_target_containment);
     g_test_add_func("/workspace/lazy/ten-thousand-files", test_large_workspace_is_loaded_lazily);
+    g_test_add_func("/workspace/delete/empty-directory", test_delete_empty_directory);
+    g_test_add_func("/workspace/delete/partial-failure", test_delete_partial_failure_reports_outcome);
     g_test_add_func("/workspace/candidate/transactional", test_scanned_workspace_candidate_is_committed_only_on_success);
     return g_test_run();
 }

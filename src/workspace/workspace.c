@@ -12,6 +12,78 @@
 #include <gio/gio.h>
 #include <glib/gstdio.h>
 
+#include "workspace/workspace_delete_test.h"
+
+static struct {
+    guint fail_on_unlink_number;
+    guint unlink_counter;
+} workspace_delete_test_state;
+
+void
+lmme_workspace_delete_test_fail_at(guint after_successful_unlinks, guint invocation)
+{
+    (void)invocation;
+    workspace_delete_test_state.fail_on_unlink_number = after_successful_unlinks + 1U;
+    workspace_delete_test_state.unlink_counter = 0;
+}
+
+void
+lmme_workspace_delete_test_reset(void)
+{
+    workspace_delete_test_state.fail_on_unlink_number = 0;
+    workspace_delete_test_state.unlink_counter = 0;
+}
+
+static gboolean
+workspace_delete_unlink(const char *path, guint64 *deleted_entries, GError **error)
+{
+    if (workspace_delete_test_state.fail_on_unlink_number != 0) {
+        workspace_delete_test_state.unlink_counter++;
+        if (workspace_delete_test_state.unlink_counter ==
+            workspace_delete_test_state.fail_on_unlink_number) {
+            workspace_delete_test_state.fail_on_unlink_number = 0;
+            g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_FAILED, "Injected delete failure.");
+            return FALSE;
+        }
+    }
+    if (g_unlink(path) != 0) {
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not delete file.");
+        return FALSE;
+    }
+    if (deleted_entries != NULL) {
+        (*deleted_entries)++;
+    }
+    return TRUE;
+}
+
+static gboolean
+workspace_delete_rmdir(const char *path, guint64 *deleted_entries, GError **error)
+{
+    if (workspace_delete_test_state.fail_on_unlink_number != 0) {
+        workspace_delete_test_state.unlink_counter++;
+        if (workspace_delete_test_state.unlink_counter ==
+            workspace_delete_test_state.fail_on_unlink_number) {
+            workspace_delete_test_state.fail_on_unlink_number = 0;
+            g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_FAILED, "Injected delete failure.");
+            return FALSE;
+        }
+    }
+    if (g_rmdir(path) != 0) {
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not delete folder.");
+        return FALSE;
+    }
+    if (deleted_entries != NULL) {
+        (*deleted_entries)++;
+    }
+    return TRUE;
+}
+
 static int
 kind_sort_rank(LmmeFileKind kind)
 {
@@ -581,7 +653,7 @@ preflight_delete_path(const char *path, dev_t workspace_device, GError **error)
 }
 
 static gboolean
-delete_path_recursive(const char *path, GError **error)
+delete_path_recursive(const char *path, guint64 *deleted_entries, GError **error)
 {
     struct stat info;
 
@@ -602,40 +674,39 @@ delete_path_recursive(const char *path, GError **error)
 
         while ((name = g_dir_read_name(dir)) != NULL) {
             g_autofree char *child = g_build_filename(path, name, NULL);
-            if (!delete_path_recursive(child, error)) {
+            if (!delete_path_recursive(child, deleted_entries, error)) {
                 return FALSE;
             }
         }
 
-        if (g_rmdir(path) != 0) {
-            g_set_error(error,
-                        G_FILE_ERROR,
-                        (gint)g_file_error_from_errno(errno),
-                        "Could not delete folder.");
+        if (!workspace_delete_rmdir(path, deleted_entries, error)) {
             return FALSE;
         }
-    } else if (g_unlink(path) != 0) {
-        g_set_error(error,
-                    G_FILE_ERROR,
-                    (gint)g_file_error_from_errno(errno),
-                    "Could not delete file.");
-        return FALSE;
+    } else {
+        if (!workspace_delete_unlink(path, deleted_entries, error)) {
+            return FALSE;
+        }
     }
 
     return TRUE;
 }
 
-gboolean
+LmmeWorkspaceDeleteOutcome
 lmme_workspace_delete_path(const LmmeWorkspace *workspace, const char *path, GError **error)
 {
     struct stat workspace_info;
+    guint64 deleted_entries = 0;
+    LmmeWorkspaceDeleteOutcome outcome = {0};
+
+    outcome.target_still_exists = g_file_test(path, G_FILE_TEST_EXISTS);
 
     if (!lmme_workspace_validate_target_parent(workspace, path, error) ||
         g_strcmp0(workspace->path, path) == 0) {
         if (error != NULL && *error == NULL) {
             g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_PERM, "Cannot delete the workspace root.");
         }
-        return FALSE;
+        outcome.result = LMME_WORKSPACE_DELETE_UNCHANGED;
+        return outcome;
     }
 
     if (stat(workspace->path, &workspace_info) != 0) {
@@ -643,13 +714,27 @@ lmme_workspace_delete_path(const LmmeWorkspace *workspace, const char *path, GEr
                     G_FILE_ERROR,
                     (gint)g_file_error_from_errno(errno),
                     "Could not inspect workspace before deletion.");
-        return FALSE;
+        outcome.result = LMME_WORKSPACE_DELETE_UNCHANGED;
+        return outcome;
     }
     if (!preflight_delete_path(path, workspace_info.st_dev, error)) {
-        return FALSE;
+        outcome.result = LMME_WORKSPACE_DELETE_UNCHANGED;
+        return outcome;
     }
 
-    return delete_path_recursive(path, error);
+    if (!delete_path_recursive(path, &deleted_entries, error)) {
+        outcome.deleted_entries = deleted_entries;
+        outcome.target_still_exists = g_file_test(path, G_FILE_TEST_EXISTS);
+        outcome.result = deleted_entries > 0 ? LMME_WORKSPACE_DELETE_PARTIAL
+                                             : LMME_WORKSPACE_DELETE_UNCHANGED;
+        return outcome;
+    }
+
+    outcome.deleted_entries = deleted_entries;
+    outcome.target_still_exists = g_file_test(path, G_FILE_TEST_EXISTS);
+    outcome.result = outcome.target_still_exists ? LMME_WORKSPACE_DELETE_PARTIAL
+                                                 : LMME_WORKSPACE_DELETE_COMPLETE;
+    return outcome;
 }
 
 char *

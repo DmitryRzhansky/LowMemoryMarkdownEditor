@@ -3,6 +3,7 @@
 #include <gtk/gtk.h>
 
 #include "app/app.h"
+#include "document/document_autosave.h"
 #include "document/document.h"
 #include "document/document_paths.h"
 #include "document/tabs.h"
@@ -187,21 +188,35 @@ action_delete(LmmeApp *app)
     }
     path = g_strdup(app->selection.path);
     parent_dir = g_path_get_dirname(path);
-    if (!lmme_workspace_delete_path(app->workspace, path, &error)) {
-        for (guint i = 0; i < affected_documents->len; i++) {
-            LmmeDocument *doc = g_ptr_array_index(affected_documents, i);
-            if (!g_file_test(doc->path, G_FILE_TEST_EXISTS)) {
-                doc->disk_state = LMME_DISK_STATE_EXTERNAL_DELETED;
-            }
+    {
+        LmmeWorkspaceDeleteOutcome delete_outcome =
+            lmme_workspace_delete_path(app->workspace, path, &error);
+
+        if (delete_outcome.result == LMME_WORKSPACE_DELETE_COMPLETE) {
+            lmme_tabs_forget_subtree(app, path);
+            lmme_window_refresh_tree_directory(app, parent_dir);
+            (void)lmme_file_tree_select_path(app->tree_view, parent_dir);
+            return;
         }
-        lmme_dialog_error(GTK_WINDOW(app->window),
-                          "Could not delete item.",
-                          error != NULL ? error->message : NULL);
-        return;
+
+        if (delete_outcome.result == LMME_WORKSPACE_DELETE_PARTIAL) {
+            for (guint i = 0; i < affected_documents->len; i++) {
+                LmmeDocument *doc = g_ptr_array_index(affected_documents, i);
+                if (!g_file_test(doc->path, G_FILE_TEST_EXISTS)) {
+                    doc->disk_state = LMME_DISK_STATE_EXTERNAL_DELETED;
+                    lmme_document_cancel_autosave(doc);
+                }
+            }
+            lmme_dialog_error(GTK_WINDOW(app->window),
+                              "Item was only partially deleted.",
+                              error != NULL ? error->message : NULL);
+        } else {
+            lmme_dialog_error(GTK_WINDOW(app->window),
+                              "Could not delete item.",
+                              error != NULL ? error->message : NULL);
+        }
+        lmme_window_refresh_tree_directory(app, parent_dir);
     }
-    lmme_tabs_forget_subtree(app, path);
-    lmme_window_refresh_tree_directory(app, parent_dir);
-    (void)lmme_file_tree_select_path(app->tree_view, parent_dir);
 }
 
 static void

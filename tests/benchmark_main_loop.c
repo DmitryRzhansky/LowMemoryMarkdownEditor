@@ -291,7 +291,9 @@ benchmark_recursive_delete(const char *root)
         }
         workspace = lmme_workspace_new(workspace_path);
         started = g_get_monotonic_time();
-        g_assert_true(lmme_workspace_delete_path(workspace, target, NULL));
+        g_assert_cmpint(lmme_workspace_delete_path(workspace, target, NULL).result,
+                        ==,
+                        LMME_WORKSPACE_DELETE_COMPLETE);
         elapsed = g_get_monotonic_time() - started;
         g_print("%s: %.3f ms, peak RSS %" G_GUINT64_FORMAT " KiB\n",
                 name,

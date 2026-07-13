@@ -70,7 +70,21 @@ gboolean lmme_workspace_rename_path(const LmmeWorkspace *workspace,
                                     const char *new_basename,
                                     char **out_path,
                                     GError **error);
-gboolean lmme_workspace_delete_path(const LmmeWorkspace *workspace, const char *path, GError **error);
+typedef enum {
+    LMME_WORKSPACE_DELETE_UNCHANGED = 0,
+    LMME_WORKSPACE_DELETE_COMPLETE,
+    LMME_WORKSPACE_DELETE_PARTIAL
+} LmmeWorkspaceDeleteResult;
+
+typedef struct {
+    LmmeWorkspaceDeleteResult result;
+    gboolean target_still_exists;
+    guint64 deleted_entries;
+} LmmeWorkspaceDeleteOutcome;
+
+LmmeWorkspaceDeleteOutcome lmme_workspace_delete_path(const LmmeWorkspace *workspace,
+                                                      const char *path,
+                                                      GError **error);
 /* Returned strings and successful out_path values are caller-owned. */
 char *lmme_workspace_target_directory(const LmmeWorkspace *workspace,
                                       const char *selected_path,
