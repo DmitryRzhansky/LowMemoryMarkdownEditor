@@ -98,3 +98,12 @@ not be run. `clang-format` is installed, but the repository has no
 `.clang-format`; applying its default LLVM style would reformat the entire
 codebase, so formatting was checked through the existing project style and the
 strict warning-clean builds instead.
+
+## Window / UI callback boundaries (2026-07-13)
+
+Branch `refactor/window-callback-boundaries` adds deferred external-conflict UI,
+partial-delete reconciliation, bounded document reads, unified image-insert
+rollback semantics, and GTK action enabled-state refresh.
+
+See [`docs/window-callback-boundaries.md`](window-callback-boundaries.md) for
+architecture detail.
