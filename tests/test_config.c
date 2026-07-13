@@ -2,6 +2,7 @@
 #include <glib/gstdio.h>
 
 #include "infra/config.h"
+#include "infra/safe_write_test.h"
 
 static void
 test_defaults(void)
@@ -49,7 +50,7 @@ test_save_load_roundtrip(void)
     config.preview_enabled = TRUE;
     lmme_config_set_last_workspace(&config, "/tmp/workspace");
 
-    g_assert_true(lmme_config_save(&config, path, NULL));
+    g_assert_cmpint(lmme_config_save(&config, path, NULL), ==, LMME_CONFIG_SAVE_COMMITTED_DURABLE);
     g_assert_true(lmme_config_load(&loaded, path, NULL));
     g_assert_cmpint(loaded.window_width, ==, 900);
     g_assert_true(loaded.preview_enabled);
@@ -140,6 +141,46 @@ test_font_size_clamp(void)
     g_rmdir(dir);
 }
 
+static void
+test_save_precommit_failure(void)
+{
+    LmmeConfig config;
+    g_autofree char *dir = g_dir_make_tmp("lmme-test-config-save-XXXXXX", NULL);
+    g_autofree char *path = g_build_filename(dir, "config.ini", NULL);
+    g_autoptr(GError) error = NULL;
+
+    lmme_config_init_defaults(&config);
+    lmme_safe_write_test_fail_at(LMME_SAFE_WRITE_TEST_FAIL_RENAME, 1);
+    g_assert_cmpint(lmme_config_save(&config, path, &error),
+                    ==,
+                    LMME_CONFIG_SAVE_NOT_COMMITTED);
+    lmme_safe_write_test_reset();
+    g_assert_nonnull(error);
+
+    lmme_config_clear(&config);
+    g_rmdir(dir);
+}
+
+static void
+test_save_postcommit_durability_failure(void)
+{
+    LmmeConfig config;
+    g_autofree char *dir = g_dir_make_tmp("lmme-test-config-save-XXXXXX", NULL);
+    g_autofree char *path = g_build_filename(dir, "config.ini", NULL);
+    g_autoptr(GError) error = NULL;
+
+    lmme_config_init_defaults(&config);
+    lmme_safe_write_test_fail_at(LMME_SAFE_WRITE_TEST_FAIL_DIRECTORY_FSYNC, 1);
+    g_assert_cmpint(lmme_config_save(&config, path, &error),
+                    ==,
+                    LMME_CONFIG_SAVE_COMMITTED_NOT_DURABLE);
+    lmme_safe_write_test_reset();
+    g_assert_nonnull(error);
+
+    lmme_config_clear(&config);
+    g_rmdir(dir);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -150,5 +191,7 @@ main(int argc, char **argv)
     g_test_add_func("/config/invalid", test_invalid_config_falls_back);
     g_test_add_func("/config/preview-delay-clamp", test_preview_delay_is_clamped);
     g_test_add_func("/config/font-size-clamp", test_font_size_clamp);
+    g_test_add_func("/config/save/precommit-failure", test_save_precommit_failure);
+    g_test_add_func("/config/save/postcommit-durability-failure", test_save_postcommit_durability_failure);
     return g_test_run();
 }

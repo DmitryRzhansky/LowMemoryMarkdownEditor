@@ -78,8 +78,12 @@ on_shutdown(GApplication *application, gpointer user_data)
     lmme_config_set_open_tabs(&app->config, paths);
 
     g_autoptr(GError) error = NULL;
-    if (!lmme_config_save(&app->config, app->config_path, &error)) {
+    LmmeConfigSaveResult save_result = lmme_config_save(&app->config, app->config_path, &error);
+
+    if (save_result == LMME_CONFIG_SAVE_NOT_COMMITTED) {
         g_warning("Could not save config: %s", error != NULL ? error->message : "unknown error");
+    } else if (save_result == LMME_CONFIG_SAVE_COMMITTED_NOT_DURABLE) {
+        g_warning("Config was replaced, but durability could not be confirmed.");
     }
 }
 

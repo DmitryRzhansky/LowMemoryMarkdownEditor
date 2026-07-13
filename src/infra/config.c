@@ -168,20 +168,21 @@ lmme_config_load(LmmeConfig *config, const char *path, GError **error)
     return TRUE;
 }
 
-gboolean
+LmmeConfigSaveResult
 lmme_config_save(const LmmeConfig *config, const char *path, GError **error)
 {
     g_autoptr(GKeyFile) key = g_key_file_new();
     g_autofree char *dir = g_path_get_dirname(path);
     g_autofree char *data = NULL;
     gsize length = 0;
+    LmmeSafeWriteOutcome outcome;
 
     if (g_mkdir_with_parents(dir, 0700) != 0) {
         g_set_error(error,
                     G_FILE_ERROR,
                     (gint)g_file_error_from_errno(errno),
                     "Could not create config directory.");
-        return FALSE;
+        return LMME_CONFIG_SAVE_NOT_COMMITTED;
     }
 
     g_key_file_set_integer(key, "window", "width", config->window_width);
@@ -222,12 +223,11 @@ lmme_config_save(const LmmeConfig *config, const char *path, GError **error)
 
     data = g_key_file_to_data(key, &length, error);
     if (data == NULL) {
-        return FALSE;
+        return LMME_CONFIG_SAVE_NOT_COMMITTED;
     }
 
-    LmmeSafeWriteOutcome outcome = lmme_safe_write_file(path, data, length, error);
-
-    return outcome.result == LMME_SAFE_WRITE_COMMITTED_DURABLE;
+    outcome = lmme_safe_write_file(path, data, length, error);
+    return outcome.result;
 }
 
 void

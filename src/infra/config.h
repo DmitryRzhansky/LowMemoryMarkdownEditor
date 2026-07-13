@@ -3,6 +3,8 @@
 
 #include <glib.h>
 
+#include "infra/safe_write.h"
+
 #define LMME_EDITOR_FONT_SIZE_MIN 9
 #define LMME_EDITOR_FONT_SIZE_DEFAULT 14
 #define LMME_EDITOR_FONT_SIZE_MAX 32
@@ -37,13 +39,19 @@ typedef struct {
     GPtrArray *open_tabs;
 } LmmeConfig;
 
+typedef LmmeSafeWriteResult LmmeConfigSaveResult;
+
+#define LMME_CONFIG_SAVE_NOT_COMMITTED LMME_SAFE_WRITE_NOT_COMMITTED
+#define LMME_CONFIG_SAVE_COMMITTED_DURABLE LMME_SAFE_WRITE_COMMITTED_DURABLE
+#define LMME_CONFIG_SAVE_COMMITTED_NOT_DURABLE LMME_SAFE_WRITE_COMMITTED_NOT_DURABLE
+
 /* LmmeConfig owns its string and open_tabs members after initialization. */
 void lmme_config_init_defaults(LmmeConfig *config);
 void lmme_config_clear(LmmeConfig *config);
 /* Returns an owned path. */
 char *lmme_config_default_path(void);
 gboolean lmme_config_load(LmmeConfig *config, const char *path, GError **error);
-gboolean lmme_config_save(const LmmeConfig *config, const char *path, GError **error);
+LmmeConfigSaveResult lmme_config_save(const LmmeConfig *config, const char *path, GError **error);
 void lmme_config_set_last_workspace(LmmeConfig *config, const char *path);
 /* paths and its strings are borrowed and copied; paths may be NULL. */
 void lmme_config_set_open_tabs(LmmeConfig *config, GPtrArray *paths);
