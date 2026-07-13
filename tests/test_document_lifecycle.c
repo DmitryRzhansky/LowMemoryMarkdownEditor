@@ -366,6 +366,37 @@ test_bulk_close_commit_failure_keeps_all_documents(void)
 }
 
 static void
+test_shutdown_commit_pending_dispositions_discards_recovery(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-document-shutdown-commit-XXXXXX", NULL);
+    g_autofree char *cache = g_build_filename(root, "recovery", NULL);
+    g_autofree char *original = g_build_filename(root, "note.md", NULL);
+    LmmeApp app = {0};
+    LmmeDocument doc = {0};
+
+    g_assert_cmpint(g_mkdir(cache, 0700), ==, 0);
+    g_assert_true(g_file_set_contents(original, "disk", -1, NULL));
+    app.recovery_store = lmme_recovery_store_new(cache);
+    app.documents = g_ptr_array_new();
+    doc.app = &app;
+    doc.path = original;
+    g_ptr_array_add(app.documents, &doc);
+    g_assert_true(lmme_recovery_write(app.recovery_store, original, root, NULL, "local", 5, NULL));
+
+    doc.pending_close = LMME_PENDING_CLOSE_DISCARD_LOCAL;
+    g_assert_true(lmme_tabs_commit_pending_dispositions(&app, NULL));
+    g_assert_cmpint(doc.pending_close, ==, LMME_PENDING_CLOSE_NONE);
+    g_assert_false(lmme_recovery_exists(app.recovery_store, original));
+
+    g_ptr_array_unref(app.documents);
+    lmme_recovery_store_free(app.recovery_store);
+    remove_directory_contents(cache);
+    g_rmdir(cache);
+    g_unlink(original);
+    g_rmdir(root);
+}
+
+static void
 test_external_states_consume_recovery_failure(void)
 {
     g_autofree char *root = g_dir_make_tmp("lmme-test-document-external-recovery-XXXXXX", NULL);
@@ -912,6 +943,8 @@ main(int argc, char **argv)
                     test_discard_close_failure_keeps_pending_close);
     g_test_add_func("/document/close/bulk-commit-failure",
                     test_bulk_close_commit_failure_keeps_all_documents);
+    g_test_add_func("/document/shutdown/commit-dispositions",
+                    test_shutdown_commit_pending_dispositions_discards_recovery);
     g_test_add_func("/document/recovery/external-states",
                     test_external_states_consume_recovery_failure);
     g_test_add_func("/document/preview-cursor-incremental", test_cursor_preview_update_does_not_full_parse);

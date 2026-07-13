@@ -5,6 +5,7 @@
 #include "document/recovery.h"
 #include "document/tabs.h"
 #include "infra/config.h"
+#include "infra/dialogs.h"
 #include "ui/window.h"
 #include "workspace/workspace.h"
 
@@ -135,6 +136,19 @@ lmme_app_request_shutdown(LmmeApp *app)
         app->shutdown_in_progress = FALSE;
         app->scheduling_blocked = FALSE;
         lmme_tabs_resume_pending_saves(app);
+        return FALSE;
+    }
+
+    g_autoptr(GError) commit_error = NULL;
+    if (!lmme_tabs_commit_pending_dispositions(app, &commit_error)) {
+        app->shutdown_in_progress = FALSE;
+        app->scheduling_blocked = FALSE;
+        lmme_tabs_resume_pending_saves(app);
+        if (app->window != NULL) {
+            lmme_dialog_error(GTK_WINDOW(app->window),
+                              "Could not finish closing documents.",
+                              commit_error != NULL ? commit_error->message : NULL);
+        }
         return FALSE;
     }
 
