@@ -136,13 +136,19 @@ reload_document_from_disk(LmmeDocument *doc,
     g_signal_handler_unblock(doc->buffer, doc->changed_handler_id);
     lmme_document_cancel_autosave(doc);
     lmme_document_cancel_recovery(doc);
-    lmme_recovery_remove(doc->app->recovery_store, doc->path, NULL);
+    if (!lmme_recovery_remove(doc->app->recovery_store, doc->path, error)) {
+        doc->recovery_cleanup_failed = TRUE;
+        g_warning("Could not remove recovery data after external reload: %s",
+                  error != NULL ? (*error)->message : "unknown error");
+    } else {
+        doc->recovery_cleanup_failed = FALSE;
+        g_clear_pointer(&doc->recovery_source_path, g_free);
+    }
     doc->disk_state = LMME_DISK_STATE_NORMAL;
     doc->has_expected_internal_fingerprint = FALSE;
     doc->last_known_fingerprint = *fingerprint;
     doc->base_fingerprint = *fingerprint;
     doc->content_revision++;
-    g_clear_pointer(&doc->recovery_source_path, g_free);
     doc->restored_from_recovery = FALSE;
     doc->recovery_failed = FALSE;
     lmme_document_set_save_state(doc, LMME_SAVE_STATE_SAVED);

@@ -9,6 +9,7 @@
 #include "document/document_autosave_test.h"
 #include "document/file_monitor.h"
 #include "document/recovery.h"
+#include "document/recovery_test.h"
 #include "document/tabs_test.h"
 #include "editor/preview.h"
 #include "infra/safe_write_test.h"
@@ -588,6 +589,94 @@ test_save_uncertain_commit_keeps_recovery(void)
 }
 
 static void
+test_durable_save_cleanup_failure_class_a_keeps_recoverable_payload(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-document-cleanup-a-XXXXXX", NULL);
+    g_autofree char *cache = g_build_filename(root, "recovery", NULL);
+    g_autofree char *original = g_build_filename(root, "note.md", NULL);
+    g_autofree char *hash = lmme_hash_path(original);
+    g_autofree char *previous_name = g_strdup_printf("%s-previous.recover", hash);
+    g_autofree char *previous_path = g_build_filename(cache, previous_name, NULL);
+    g_autoptr(GPtrArray) entries = NULL;
+    LmmeApp app = {0};
+    LmmeDocument *doc = NULL;
+
+    g_assert_true(g_file_set_contents(original, "disk", -1, NULL));
+    g_assert_cmpint(g_mkdir(cache, 0700), ==, 0);
+    g_assert_true(g_file_set_contents(previous_path, "old", -1, NULL));
+    app.workspace = lmme_workspace_new(root);
+    app.recovery_store = lmme_recovery_store_new(cache);
+    doc = test_document_new(&app, original, "new text");
+    g_assert_true(lmme_document_flush_recovery(doc, NULL));
+
+    lmme_recovery_test_fail_at(LMME_RECOVERY_TEST_FAIL_INACTIVE_GENERATION_UNLINK, 1);
+    g_test_expect_message(NULL, G_LOG_LEVEL_WARNING, "*Could not remove recovery data after save*");
+    g_assert_cmpint(lmme_document_save(doc, NULL),
+                    ==,
+                    LMME_DOCUMENT_SAVE_COMMITTED_DURABLE);
+    g_test_assert_expected_messages();
+    lmme_recovery_test_reset();
+
+    g_assert_true(doc->recovery_cleanup_failed);
+    g_assert_false(doc->recovery_failed);
+    g_assert_false(doc->restored_from_recovery);
+    g_assert_cmpint(doc->save_state, ==, LMME_SAVE_STATE_SAVED);
+    entries = lmme_recovery_list(app.recovery_store, NULL);
+    g_assert_cmpuint(entries->len, ==, 1);
+    g_assert_true(g_file_test(previous_path, G_FILE_TEST_IS_REGULAR));
+
+    test_document_environment_clear(&app, doc, root, cache);
+}
+
+static void
+test_durable_save_cleanup_failure_class_b_leaves_stale_metadata_only(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-document-cleanup-b-XXXXXX", NULL);
+    g_autofree char *cache = g_build_filename(root, "recovery", NULL);
+    g_autofree char *original = g_build_filename(root, "note.md", NULL);
+    g_autoptr(GPtrArray) entries = NULL;
+    LmmeApp app = {0};
+    LmmeDocument *doc = NULL;
+
+    g_assert_true(g_file_set_contents(original, "disk", -1, NULL));
+    app.workspace = lmme_workspace_new(root);
+    app.recovery_store = lmme_recovery_store_new(cache);
+    doc = test_document_new(&app, original, "new text");
+    g_assert_true(lmme_document_flush_recovery(doc, NULL));
+
+    lmme_recovery_test_fail_at(LMME_RECOVERY_TEST_FAIL_METADATA_UNLINK, 1);
+    g_test_expect_message(NULL, G_LOG_LEVEL_WARNING, "*Could not remove recovery data after save*");
+    g_assert_cmpint(lmme_document_save(doc, NULL),
+                    ==,
+                    LMME_DOCUMENT_SAVE_COMMITTED_DURABLE);
+    g_test_assert_expected_messages();
+    lmme_recovery_test_reset();
+
+    g_assert_true(doc->recovery_cleanup_failed);
+    g_assert_false(doc->recovery_failed);
+    g_assert_false(doc->restored_from_recovery);
+    g_assert_cmpint(doc->save_state, ==, LMME_SAVE_STATE_SAVED);
+    entries = lmme_recovery_list(app.recovery_store, NULL);
+    g_assert_cmpuint(entries->len, ==, 0);
+
+    test_document_environment_clear(&app, doc, root, cache);
+}
+
+static void
+test_recovery_cleanup_failure_status_label(void)
+{
+    LmmeDocument doc = {0};
+    g_autofree char *relative_path = g_strdup("note.md");
+    g_autofree char *status = NULL;
+
+    doc.relative_path = relative_path;
+    doc.save_state = LMME_SAVE_STATE_SAVED;
+    doc.recovery_cleanup_failed = TRUE;
+    status = lmme_statusbar_format_document(&doc, 3, 1, 10, FALSE);
+    g_assert_nonnull(strstr(status, "Saved | Recovery cleanup failed | Source"));
+}
+
+static void
 test_save_as_is_transactional(void)
 {
     g_autofree char *root = g_dir_make_tmp("lmme-test-document-save-as-XXXXXX", NULL);
@@ -708,6 +797,12 @@ main(int argc, char **argv)
     g_test_add_func("/document/recovery-save-original", test_recovered_document_saves_to_original);
     g_test_add_func("/document/save/precommit-failure", test_save_precommit_failure_keeps_document_state);
     g_test_add_func("/document/save/uncertain", test_save_uncertain_commit_keeps_recovery);
+    g_test_add_func("/document/save/cleanup-failure-class-a",
+                    test_durable_save_cleanup_failure_class_a_keeps_recoverable_payload);
+    g_test_add_func("/document/save/cleanup-failure-class-b",
+                    test_durable_save_cleanup_failure_class_b_leaves_stale_metadata_only);
+    g_test_add_func("/document/recovery/cleanup-failure-status",
+                    test_recovery_cleanup_failure_status_label);
     g_test_add_func("/document/save-as/transactional", test_save_as_is_transactional);
     g_test_add_func("/document/save-as/uncertain", test_save_as_uncertain_commit_switches_path_with_recovery);
     g_test_add_func("/document/overwrite/explicit-policy", test_overwrite_uses_explicit_conflict_policy);

@@ -13,9 +13,13 @@ lmme_statusbar_format_document(const LmmeDocument *doc,
                                guint words,
                                gboolean preview_enabled)
 {
-    const char *recovery_status = doc != NULL && doc->recovery_failed
-                                      ? " | Recovery failed"
-                                      : "";
+    const char *recovery_status = "";
+
+    if (doc != NULL && doc->recovery_failed) {
+        recovery_status = " | Recovery failed";
+    } else if (doc != NULL && doc->recovery_cleanup_failed) {
+        recovery_status = " | Recovery cleanup failed";
+    }
 
     if (doc == NULL) {
         return g_strdup("No file opened");

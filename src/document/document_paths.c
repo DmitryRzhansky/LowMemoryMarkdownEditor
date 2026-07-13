@@ -10,6 +10,36 @@
 
 #include <string.h>
 
+static void
+note_recovery_cleanup_failure(LmmeDocument *doc, const char *context, GError *error)
+{
+    if (doc == NULL) {
+        return;
+    }
+    doc->recovery_cleanup_failed = TRUE;
+    g_warning("%s: %s",
+              context != NULL ? context : "Recovery cleanup failed",
+              error != NULL ? error->message : "unknown error");
+}
+
+static gboolean
+try_remove_recovery(LmmeDocument *doc,
+                    LmmeRecoveryStore *store,
+                    const char *original_path,
+                    const char *context)
+{
+    g_autoptr(GError) local_error = NULL;
+
+    if (original_path == NULL) {
+        return TRUE;
+    }
+    if (lmme_recovery_remove(store, original_path, &local_error)) {
+        return TRUE;
+    }
+    note_recovery_cleanup_failure(doc, context, local_error);
+    return FALSE;
+}
+
 typedef struct {
     LmmeDocument *document;
     char *old_path;
@@ -57,7 +87,10 @@ remove_prepared_recoveries(LmmeDocumentPathRemapPlan *plan)
     for (guint i = 0; i < plan->entries->len; i++) {
         LmmeDocumentPathRemapEntry *entry = g_ptr_array_index(plan->entries, i);
         if (entry->prepared_new_recovery) {
-            (void)lmme_recovery_remove(plan->app->recovery_store, entry->new_path, NULL);
+            try_remove_recovery(entry->document,
+                                plan->app->recovery_store,
+                                entry->new_path,
+                                "Could not remove prepared recovery data");
             entry->prepared_new_recovery = FALSE;
         }
     }
@@ -91,7 +124,10 @@ prepare_recovery(LmmeDocumentPathRemapPlan *plan,
     }
     if (!lmme_recovery_stage_commit(stage, error)) {
         lmme_recovery_stage_free(stage);
-        (void)lmme_recovery_remove(plan->app->recovery_store, entry->new_path, NULL);
+        try_remove_recovery(doc,
+                            plan->app->recovery_store,
+                            entry->new_path,
+                            "Could not remove recovery data after a failed remap commit");
         return FALSE;
     }
     lmme_recovery_stage_free(stage);
@@ -208,13 +244,21 @@ lmme_document_path_remap_plan_commit(LmmeDocumentPathRemapPlan *plan)
         doc->relative_path = g_steal_pointer(&entry->new_relative_path);
 
         if (entry->prepared_new_recovery) {
-            (void)lmme_recovery_remove(plan->app->recovery_store, entry->old_path, NULL);
-            g_free(doc->recovery_source_path);
-            doc->recovery_source_path = lmme_recovery_path_for_original(plan->app->recovery_store,
-                                                                        doc->path);
+            if (try_remove_recovery(doc,
+                                    plan->app->recovery_store,
+                                    entry->old_path,
+                                    "Could not remove recovery data for the previous path after remap")) {
+                g_free(doc->recovery_source_path);
+                doc->recovery_source_path = lmme_recovery_path_for_original(plan->app->recovery_store,
+                                                                            doc->path);
+            }
         } else if (entry->had_old_recovery) {
-            (void)lmme_recovery_remove(plan->app->recovery_store, entry->old_path, NULL);
-            g_clear_pointer(&doc->recovery_source_path, g_free);
+            if (try_remove_recovery(doc,
+                                    plan->app->recovery_store,
+                                    entry->old_path,
+                                    "Could not remove recovery data for the previous path after remap")) {
+                g_clear_pointer(&doc->recovery_source_path, g_free);
+            }
         }
         lmme_document_file_monitor_attach(doc);
         lmme_document_refresh_title(doc);

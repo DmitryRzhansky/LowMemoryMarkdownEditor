@@ -43,6 +43,7 @@ struct _LmmeDocument {
     char *recovery_source_path;
     gboolean restored_from_recovery;
     gboolean recovery_failed;
+    gboolean recovery_cleanup_failed;
     guint64 content_revision;
     LmmePendingCloseDisposition pending_close;
 

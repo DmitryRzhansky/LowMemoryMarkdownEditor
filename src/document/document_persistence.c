@@ -11,6 +11,41 @@
 
 #include <string.h>
 
+static void
+note_recovery_cleanup_failure(LmmeDocument *doc, const char *context, GError *error)
+{
+    if (doc == NULL) {
+        return;
+    }
+    doc->recovery_cleanup_failed = TRUE;
+    g_warning("%s: %s",
+              context != NULL ? context : "Recovery cleanup failed",
+              error != NULL ? error->message : "unknown error");
+}
+
+static gboolean
+remove_recovery_for_document(LmmeDocument *doc,
+                             const char *original_path,
+                             gboolean blocking,
+                             const char *context,
+                             GError **error)
+{
+    g_autoptr(GError) local_error = NULL;
+
+    if (doc == NULL || original_path == NULL) {
+        return TRUE;
+    }
+    if (lmme_recovery_remove(doc->app->recovery_store, original_path, &local_error)) {
+        return TRUE;
+    }
+    if (blocking) {
+        g_propagate_error(error, g_steal_pointer(&local_error));
+        return FALSE;
+    }
+    note_recovery_cleanup_failure(doc, context, local_error);
+    return FALSE;
+}
+
 static LmmeDocumentSaveResult
 document_result_from_write_result(LmmeSafeWriteResult result)
 {
@@ -113,12 +148,28 @@ lmme_document_persist(LmmeDocument *doc,
             return result;
         }
         gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc->buffer), FALSE);
-        (void)lmme_recovery_remove(doc->app->recovery_store, doc->path, NULL);
-        if (path_changed) {
-            (void)lmme_recovery_remove(doc->app->recovery_store, old_path, NULL);
-        }
-        g_clear_pointer(&doc->recovery_source_path, g_free);
         doc->restored_from_recovery = FALSE;
+        if (!remove_recovery_for_document(doc,
+                                          doc->path,
+                                          FALSE,
+                                          "Could not remove recovery data after save",
+                                          NULL)) {
+            doc->recovery_cleanup_failed = TRUE;
+            lmme_document_set_save_state(doc, LMME_SAVE_STATE_SAVED);
+            return result;
+        }
+        if (path_changed &&
+            !remove_recovery_for_document(doc,
+                                        old_path,
+                                        FALSE,
+                                        "Could not remove recovery data for the previous path after save",
+                                        NULL)) {
+            doc->recovery_cleanup_failed = TRUE;
+            lmme_document_set_save_state(doc, LMME_SAVE_STATE_SAVED);
+            return result;
+        }
+        doc->recovery_cleanup_failed = FALSE;
+        g_clear_pointer(&doc->recovery_source_path, g_free);
         doc->recovery_failed = FALSE;
         lmme_document_set_save_state(doc, LMME_SAVE_STATE_SAVED);
         return result;
@@ -132,7 +183,11 @@ lmme_document_persist(LmmeDocument *doc,
                                               snapshot_revision,
                                               NULL)) {
         if (path_changed) {
-            (void)lmme_recovery_remove(doc->app->recovery_store, old_path, NULL);
+            (void)remove_recovery_for_document(doc,
+                                               old_path,
+                                               FALSE,
+                                               "Could not remove recovery data for the previous path",
+                                               NULL);
         }
         g_free(doc->recovery_source_path);
         doc->recovery_source_path = lmme_recovery_path_for_original(doc->app->recovery_store,
