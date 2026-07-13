@@ -6,6 +6,35 @@
 
 #include "app/app.h"
 
+static guint command_actions_refresh_source_id = 0;
+static LmmeApp *command_actions_refresh_app = NULL;
+
+static gboolean
+command_actions_refresh_idle_cb(gpointer user_data)
+{
+    LmmeApp *app = user_data;
+
+    command_actions_refresh_source_id = 0;
+    command_actions_refresh_app = NULL;
+    if (app != NULL) {
+        lmme_command_actions_refresh(app);
+    }
+    return G_SOURCE_REMOVE;
+}
+
+void
+lmme_command_actions_request_refresh(LmmeApp *app)
+{
+    if (app == NULL || app->gtk_app == NULL) {
+        return;
+    }
+    command_actions_refresh_app = app;
+    if (command_actions_refresh_source_id != 0) {
+        return;
+    }
+    command_actions_refresh_source_id = g_idle_add(command_actions_refresh_idle_cb, app);
+}
+
 static void
 dispatch_command(const LmmeCommandDef *command,
                  GSimpleAction *action,

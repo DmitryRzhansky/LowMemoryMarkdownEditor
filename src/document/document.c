@@ -10,6 +10,7 @@
 #include "document/file_monitor.h"
 #include "document/recovery.h"
 #include "editor/editor.h"
+#include "editor/preview.h"
 #include "features/image_insert.h"
 #include "infra/util.h"
 #include "ui/external_conflict.h"
@@ -313,6 +314,10 @@ lmme_document_update_preview_active_line(LmmeDocument *doc)
     if (doc == NULL || !doc->app->preview_enabled || doc->preview_dirty) {
         return;
     }
+    if (!lmme_preview_marker_cache_is_current(GTK_TEXT_BUFFER(doc->buffer))) {
+        doc->preview_dirty = TRUE;
+        return;
+    }
     gtk_text_buffer_get_iter_at_mark(GTK_TEXT_BUFFER(doc->buffer),
                                      &cursor,
                                      gtk_text_buffer_get_insert(GTK_TEXT_BUFFER(doc->buffer)));
@@ -464,7 +469,7 @@ on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data)
     }
     lmme_window_schedule_preview(doc->app);
     if (doc->app != NULL && doc->app->gtk_app != NULL && lmme_tabs_get_active(doc->app) == doc) {
-        lmme_command_actions_refresh(doc->app);
+        lmme_command_actions_request_refresh(doc->app);
     }
 }
 
@@ -488,6 +493,6 @@ on_cursor_moved(GObject *object, GParamSpec *pspec, gpointer user_data)
         lmme_window_update_status(doc->app);
     }
     if (doc->app->gtk_app != NULL && lmme_tabs_get_active(doc->app) == doc) {
-        lmme_command_actions_refresh(doc->app);
+        lmme_command_actions_request_refresh(doc->app);
     }
 }

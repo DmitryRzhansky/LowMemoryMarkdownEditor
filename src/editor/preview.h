@@ -19,5 +19,6 @@ void lmme_preview_update_active_line(GtkTextBuffer *buffer,
                                      guint old_line,
                                      gboolean old_line_valid,
                                      guint new_line);
+gboolean lmme_preview_marker_cache_is_current(GtkTextBuffer *buffer);
 
 #endif

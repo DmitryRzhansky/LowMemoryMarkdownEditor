@@ -40,6 +40,7 @@ G_STATIC_ASSERT(G_N_ELEMENTS(preview_tag_names) == LMME_PREVIEW_RANGE_COUNT);
 static const char *active_marker_tag_name = "lmme-preview-active-marker";
 
 static const char *marker_cache_key = "lmme-preview-marker-ranges";
+static const char *marker_char_count_key = "lmme-preview-marker-char-count";
 
 static const char *
 tag_name_for_kind(LmmePreviewRangeKind kind)
@@ -294,6 +295,7 @@ lmme_preview_clear_editable_preview(GtkTextBuffer *buffer)
         }
     }
     g_object_set_data(G_OBJECT(buffer), marker_cache_key, NULL);
+    g_object_set_data(G_OBJECT(buffer), marker_char_count_key, NULL);
 }
 
 static void
@@ -308,8 +310,15 @@ apply_cached_marker_style_to_line(GtkTextBuffer *buffer, guint line, gboolean ac
     int line_count = gtk_text_buffer_get_line_count(buffer);
     guint line_start_offset = 0;
     guint line_end_offset = 0;
+    int char_count = 0;
+    guint cached_char_count = 0;
 
     if (ranges == NULL || line > (guint)G_MAXINT || line >= (guint)line_count) {
+        return;
+    }
+    char_count = gtk_text_buffer_get_char_count(buffer);
+    cached_char_count = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(buffer), marker_char_count_key));
+    if (cached_char_count != (guint)char_count) {
         return;
     }
     gtk_text_buffer_get_iter_at_line(buffer, &line_start, (int)line);
@@ -334,7 +343,12 @@ apply_cached_marker_style_to_line(GtkTextBuffer *buffer, guint line, gboolean ac
         if (range->start_offset >= line_end_offset) {
             break;
         }
-        if (range->end_offset > line_end_offset || range->end_offset > (guint)G_MAXINT) {
+        if (range->start_offset < line_start_offset ||
+            range->end_offset <= range->start_offset ||
+            range->end_offset > line_end_offset ||
+            range->end_offset > (guint)char_count ||
+            range->start_offset >= (guint)char_count ||
+            range->end_offset > (guint)G_MAXINT) {
             continue;
         }
         gtk_text_buffer_get_iter_at_offset(buffer, &start, (int)range->start_offset);
@@ -387,6 +401,23 @@ lmme_preview_update_active_line(GtkTextBuffer *buffer,
         apply_cached_marker_style_to_line(buffer, old_line, FALSE);
     }
     apply_cached_marker_style_to_line(buffer, new_line, TRUE);
+}
+
+gboolean
+lmme_preview_marker_cache_is_current(GtkTextBuffer *buffer)
+{
+    guint cached_char_count = 0;
+    int char_count = 0;
+
+    if (buffer == NULL) {
+        return FALSE;
+    }
+    if (g_object_get_data(G_OBJECT(buffer), marker_cache_key) == NULL) {
+        return FALSE;
+    }
+    cached_char_count = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(buffer), marker_char_count_key));
+    char_count = gtk_text_buffer_get_char_count(buffer);
+    return cached_char_count == (guint)char_count;
 }
 
 LmmePreviewApplyResult
@@ -447,6 +478,9 @@ lmme_preview_apply_editable_preview(GtkTextBuffer *buffer,
                            marker_cache_key,
                            marker_ranges,
                            (GDestroyNotify)g_ptr_array_unref);
+    g_object_set_data(G_OBJECT(buffer),
+                       marker_char_count_key,
+                       GUINT_TO_POINTER((guint)total_chars));
 
     lmme_preview_update_active_line(buffer, 0, FALSE, active_line);
 
