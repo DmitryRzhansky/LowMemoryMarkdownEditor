@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 
 #include "document/recovery.h"
+#include "document/recovery_test.h"
 
 #include "infra/safe_write.h"
 #include "infra/util.h"
@@ -42,6 +43,83 @@ static gboolean append_metadata_entries(LmmeRecoveryStore *store,
 static void append_legacy_entries(LmmeRecoveryStore *store,
                                   GPtrArray *entries,
                                   GHashTable *seen_hashes);
+
+typedef struct {
+    gboolean enabled;
+    LmmeRecoveryTestFault fault;
+    guint target_invocation;
+    guint current_invocation;
+    const char *active_payload_path;
+} LmmeRecoveryTestState;
+
+static LmmeRecoveryTestState recovery_test_state;
+
+void
+lmme_recovery_test_fail_at(LmmeRecoveryTestFault fault, guint invocation)
+{
+    recovery_test_state.enabled = TRUE;
+    recovery_test_state.fault = fault;
+    recovery_test_state.target_invocation = invocation > 0 ? invocation : 1;
+    recovery_test_state.current_invocation = 0;
+    recovery_test_state.active_payload_path = NULL;
+}
+
+void
+lmme_recovery_test_reset(void)
+{
+    recovery_test_state = (LmmeRecoveryTestState){0};
+}
+
+static LmmeRecoveryTestFault
+recovery_test_fault_for_path(const char *path)
+{
+    g_autofree char *basename = NULL;
+    const char *dash = NULL;
+
+    if (path == NULL) {
+        return (LmmeRecoveryTestFault)-1;
+    }
+    basename = g_path_get_basename(path);
+    if (g_str_has_suffix(basename, ".meta")) {
+        return LMME_RECOVERY_TEST_FAIL_METADATA_UNLINK;
+    }
+    if (g_str_has_suffix(basename, ".path")) {
+        return LMME_RECOVERY_TEST_FAIL_LEGACY_LOCATOR_UNLINK;
+    }
+    if (!g_str_has_suffix(basename, ".recover")) {
+        return (LmmeRecoveryTestFault)-1;
+    }
+    if (recovery_test_state.active_payload_path != NULL &&
+        g_strcmp0(path, recovery_test_state.active_payload_path) == 0) {
+        return LMME_RECOVERY_TEST_FAIL_ACTIVE_PAYLOAD_UNLINK;
+    }
+    dash = strchr(basename, '-');
+    if (dash != NULL && g_str_has_suffix(dash, ".recover")) {
+        return LMME_RECOVERY_TEST_FAIL_INACTIVE_GENERATION_UNLINK;
+    }
+    return LMME_RECOVERY_TEST_FAIL_ACTIVE_PAYLOAD_UNLINK;
+}
+
+static gboolean
+recovery_test_should_fail_unlink(const char *path)
+{
+    LmmeRecoveryTestFault path_fault;
+
+    if (!recovery_test_state.enabled) {
+        return FALSE;
+    }
+    path_fault = recovery_test_fault_for_path(path);
+    if (path_fault != recovery_test_state.fault) {
+        return FALSE;
+    }
+    recovery_test_state.current_invocation++;
+    if (recovery_test_state.current_invocation != recovery_test_state.target_invocation) {
+        return FALSE;
+    }
+    recovery_test_state.enabled = FALSE;
+    errno = EIO;
+    return TRUE;
+}
 
 LmmeRecoveryStore *
 lmme_recovery_store_new(const char *directory)
@@ -349,6 +427,13 @@ remove_if_present(const char *path, GError **error)
 {
     if (path == NULL || !g_file_test(path, G_FILE_TEST_EXISTS)) {
         return TRUE;
+    }
+    if (recovery_test_should_fail_unlink(path)) {
+        g_set_error(error,
+                    G_FILE_ERROR,
+                    (gint)g_file_error_from_errno(errno),
+                    "Could not remove recovery data.");
+        return FALSE;
     }
     if (g_unlink(path) == 0) {
         return TRUE;

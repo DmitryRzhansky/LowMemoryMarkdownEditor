@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 
 #include "document/recovery.h"
+#include "document/recovery_test.h"
 #include "infra/safe_write_test.h"
 #include "infra/util.h"
 
@@ -404,6 +405,37 @@ test_missing_original_and_workspace_filter(void)
 }
 
 static void
+test_recovery_unlink_fault_seam(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-recovery-fault-seam-XXXXXX", NULL);
+    g_autofree char *cache = g_build_filename(root, "cache", NULL);
+    g_autofree char *original = g_build_filename(root, "note.md", NULL);
+    g_autoptr(GError) error = NULL;
+    LmmeRecoveryStore *store = NULL;
+
+    g_assert_cmpint(g_mkdir(cache, 0700), ==, 0);
+    g_assert_true(g_file_set_contents(original, "disk", -1, NULL));
+    store = lmme_recovery_store_new(cache);
+    g_assert_true(lmme_recovery_write(store, original, root, NULL, "unsaved", 7, NULL));
+
+    lmme_recovery_test_reset();
+    g_assert_true(lmme_recovery_remove(store, original, NULL));
+
+    lmme_recovery_test_fail_at(LMME_RECOVERY_TEST_FAIL_METADATA_UNLINK, 1);
+    g_assert_true(lmme_recovery_write(store, original, root, NULL, "unsaved", 7, NULL));
+    g_assert_false(lmme_recovery_remove(store, original, &error));
+    g_assert_nonnull(error);
+    lmme_recovery_test_reset();
+    g_assert_true(lmme_recovery_exists(store, original));
+
+    lmme_recovery_store_free(store);
+    remove_directory_contents(cache);
+    g_rmdir(cache);
+    g_unlink(original);
+    g_rmdir(root);
+}
+
+static void
 test_legacy_and_corrupt_metadata(void)
 {
     g_autofree char *root = g_dir_make_tmp("lmme-test-recovery-XXXXXX", NULL);
@@ -452,6 +484,7 @@ main(int argc, char **argv)
                     test_listing_preserves_unreferenced_generations);
     g_test_add_func("/recovery/original-change", test_original_change_is_detected);
     g_test_add_func("/recovery/missing-workspace-filter", test_missing_original_and_workspace_filter);
+    g_test_add_func("/recovery/unlink-fault-seam", test_recovery_unlink_fault_seam);
     g_test_add_func("/recovery/legacy-corrupt", test_legacy_and_corrupt_metadata);
     return g_test_run();
 }
