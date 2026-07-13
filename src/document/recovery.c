@@ -423,6 +423,14 @@ lmme_recovery_write(LmmeRecoveryStore *store,
 }
 
 static gboolean
+regular_file_without_following_symlink(const char *path)
+{
+    struct stat info;
+
+    return g_lstat(path, &info) == 0 && S_ISREG(info.st_mode);
+}
+
+static gboolean
 remove_if_present(const char *path, GError **error)
 {
     if (path == NULL || !g_file_test(path, G_FILE_TEST_EXISTS)) {
@@ -445,6 +453,75 @@ remove_if_present(const char *path, GError **error)
     return FALSE;
 }
 
+static char *
+active_payload_path_for_original(LmmeRecoveryStore *store, const char *original_path)
+{
+    return metadata_recovery_path(store, original_path);
+}
+
+static gboolean
+payload_path_exists(const char *path)
+{
+    return path != NULL && regular_file_without_following_symlink(path);
+}
+
+static gboolean
+remove_payload_paths_except(const GPtrArray *payload_paths,
+                            const char *keep_path,
+                            GError **error)
+{
+    for (guint i = 0; i < payload_paths->len; i++) {
+        const char *path = g_ptr_array_index(payload_paths, i);
+
+        if (keep_path != NULL && g_strcmp0(path, keep_path) == 0) {
+            continue;
+        }
+        if (!remove_if_present(path, error)) {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+static gboolean
+collect_payload_paths(LmmeRecoveryStore *store,
+                      const char *hash,
+                      const char *generation_prefix,
+                      GPtrArray *payload_paths)
+{
+    g_autofree char *fixed_path = NULL;
+    g_autoptr(GDir) directory = NULL;
+    const char *name = NULL;
+
+    fixed_path = g_strdup_printf("%s.recover", hash);
+    g_ptr_array_add(payload_paths, g_build_filename(store->directory, fixed_path, NULL));
+
+    directory = g_dir_open(store->directory, 0, NULL);
+    while (directory != NULL && (name = g_dir_read_name(directory)) != NULL) {
+        if (g_str_has_prefix(name, generation_prefix) && g_str_has_suffix(name, ".recover")) {
+            g_ptr_array_add(payload_paths, g_build_filename(store->directory, name, NULL));
+        }
+    }
+    return TRUE;
+}
+
+static void
+deduplicate_payload_paths(GPtrArray *payload_paths)
+{
+    g_autoptr(GHashTable) seen = g_hash_table_new(g_str_hash, g_str_equal);
+
+    for (gint i = (gint)payload_paths->len - 1; i >= 0; i--) {
+        char *path = g_ptr_array_index(payload_paths, i);
+
+        if (g_hash_table_contains(seen, path)) {
+            g_ptr_array_remove_index(payload_paths, (guint)i);
+            g_free(path);
+            continue;
+        }
+        g_hash_table_add(seen, path);
+    }
+}
+
 gboolean
 lmme_recovery_remove(LmmeRecoveryStore *store,
                      const char *original_path,
@@ -452,12 +529,11 @@ lmme_recovery_remove(LmmeRecoveryStore *store,
 {
     g_autofree char *hash = NULL;
     g_autofree char *generation_prefix = NULL;
-    g_autofree char *active_path = NULL;
-    g_autofree char *fixed_path = NULL;
+    g_autofree char *active_payload_path = NULL;
     g_autofree char *metadata_path = NULL;
-    g_autofree char *legacy_path = NULL;
-    g_autoptr(GDir) directory = NULL;
-    const char *name = NULL;
+    g_autofree char *legacy_locator_path = NULL;
+    g_autoptr(GPtrArray) payload_paths = NULL;
+    const char *active_keep_path = NULL;
 
     if (store == NULL || original_path == NULL) {
         g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid recovery removal request.");
@@ -466,36 +542,37 @@ lmme_recovery_remove(LmmeRecoveryStore *store,
 
     hash = lmme_hash_path(original_path);
     generation_prefix = g_strdup_printf("%s-", hash);
-    active_path = lmme_recovery_path_for_original(store, original_path);
-    fixed_path = fixed_recovery_path_for_original(store, original_path);
     metadata_path = path_for_original_with_suffix(store, original_path, ".meta");
-    legacy_path = path_for_original_with_suffix(store, original_path, ".path");
+    legacy_locator_path = path_for_original_with_suffix(store, original_path, ".path");
 
-    if (!remove_if_present(metadata_path, error) ||
-        !remove_if_present(legacy_path, error) ||
-        !remove_if_present(active_path, error) ||
-        !remove_if_present(fixed_path, error)) {
+    payload_paths = g_ptr_array_new_with_free_func(g_free);
+    collect_payload_paths(store, hash, generation_prefix, payload_paths);
+    deduplicate_payload_paths(payload_paths);
+
+    active_payload_path = active_payload_path_for_original(store, original_path);
+    if (payload_path_exists(active_payload_path)) {
+        active_keep_path = active_payload_path;
+    }
+    recovery_test_state.active_payload_path = active_keep_path;
+
+    if (!remove_payload_paths_except(payload_paths, active_keep_path, error)) {
+        recovery_test_state.active_payload_path = NULL;
         return FALSE;
     }
 
-    directory = g_dir_open(store->directory, 0, NULL);
-    while (directory != NULL && (name = g_dir_read_name(directory)) != NULL) {
-        if (g_str_has_prefix(name, generation_prefix) && g_str_has_suffix(name, ".recover")) {
-            g_autofree char *path = g_build_filename(store->directory, name, NULL);
-            if (!remove_if_present(path, error)) {
-                return FALSE;
-            }
-        }
+    if (active_keep_path != NULL && !remove_if_present(active_keep_path, error)) {
+        recovery_test_state.active_payload_path = NULL;
+        return FALSE;
     }
+
+    if (!remove_if_present(metadata_path, error) ||
+        !remove_if_present(legacy_locator_path, error)) {
+        recovery_test_state.active_payload_path = NULL;
+        return FALSE;
+    }
+
+    recovery_test_state.active_payload_path = NULL;
     return TRUE;
-}
-
-static gboolean
-regular_file_without_following_symlink(const char *path)
-{
-    struct stat info;
-
-    return g_lstat(path, &info) == 0 && S_ISREG(info.st_mode);
 }
 
 static gboolean
