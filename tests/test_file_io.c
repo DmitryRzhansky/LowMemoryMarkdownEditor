@@ -106,6 +106,26 @@ test_file_read_utf8_permission_error(void)
     g_rmdir(directory);
 }
 
+static void
+test_file_read_utf8_document_open_limit(void)
+{
+    g_autofree char *directory = g_dir_make_tmp("lmme-file-io-limit-XXXXXX", NULL);
+    g_autofree char *path = g_build_filename(directory, "note.md", NULL);
+    g_autofree char *contents = NULL;
+    g_autoptr(GError) error = NULL;
+
+    g_assert_cmpuint(LMME_DOCUMENT_MAX_OPEN_BYTES, ==, 10U * 1024U * 1024U);
+    g_assert_true(g_file_set_contents(path, "abc", 3, NULL));
+    g_assert_true(lmme_file_read_utf8(path, LMME_DOCUMENT_MAX_OPEN_BYTES, &contents, NULL, NULL));
+    g_clear_pointer(&contents, g_free);
+
+    g_assert_false(lmme_file_read_utf8(path, 2, &contents, NULL, &error));
+    g_assert_error(error, G_FILE_ERROR, G_FILE_ERROR_FAILED);
+
+    g_unlink(path);
+    g_rmdir(directory);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -114,5 +134,6 @@ main(int argc, char **argv)
     g_test_add_func("/file-io/invalid-missing", test_file_read_utf8_rejects_invalid_and_missing);
     g_test_add_func("/file-io/size-boundary", test_file_read_utf8_enforces_size_boundary);
     g_test_add_func("/file-io/permission", test_file_read_utf8_permission_error);
+    g_test_add_func("/file-io/document-open-limit", test_file_read_utf8_document_open_limit);
     return g_test_run();
 }

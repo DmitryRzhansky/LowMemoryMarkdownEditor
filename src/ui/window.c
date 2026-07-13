@@ -139,8 +139,11 @@ restore_tabs(LmmeApp *app)
     if (app->workspace != NULL && app->config.restore_tabs && app->config.open_tabs != NULL) {
         for (guint i = 0; i < app->config.open_tabs->len; i++) {
             const char *path = g_ptr_array_index(app->config.open_tabs, i);
-            if (g_file_test(path, G_FILE_TEST_EXISTS) && lmme_path_is_inside(app->workspace->path, path)) {
-                lmme_tabs_open_file(app, path, NULL);
+            g_autoptr(GError) error = NULL;
+
+            if (g_file_test(path, G_FILE_TEST_EXISTS) && lmme_path_is_inside(app->workspace->path, path) &&
+                !lmme_tabs_open_file(app, path, &error)) {
+                g_warning("Could not restore tab %s: %s", path, error != NULL ? error->message : "unknown error");
             }
         }
     }

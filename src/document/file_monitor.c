@@ -36,7 +36,7 @@ lmme_document_reload_from_disk(LmmeDocument *doc,
         g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid reload request.");
         return FALSE;
     }
-    if (!lmme_file_read_utf8(doc->path, G_MAXINT, &contents, &length, error)) {
+    if (!lmme_file_read_utf8(doc->path, LMME_DOCUMENT_MAX_OPEN_BYTES, &contents, &length, error)) {
         return FALSE;
     }
 

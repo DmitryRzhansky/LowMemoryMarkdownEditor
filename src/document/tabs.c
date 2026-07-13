@@ -140,7 +140,13 @@ lmme_tabs_get_active(LmmeApp *app)
 }
 
 static gboolean
-open_file_contents(const char *path, char **contents, GError **error)
+open_document_contents(const char *path, char **contents, GError **error)
+{
+    return lmme_file_read_utf8(path, LMME_DOCUMENT_MAX_OPEN_BYTES, contents, NULL, error);
+}
+
+static gboolean
+open_recovery_contents(const char *path, char **contents, GError **error)
 {
     return lmme_file_read_utf8(path, G_MAXINT, contents, NULL, error);
 }
@@ -170,7 +176,7 @@ lmme_tabs_open_file(LmmeApp *app, const char *path, GError **error)
         gtk_notebook_set_current_page(GTK_NOTEBOOK(app->notebook), page);
         return TRUE;
     }
-    if (!open_file_contents(path, &contents, error)) {
+    if (!open_document_contents(path, &contents, error)) {
         return FALSE;
     }
 
@@ -196,7 +202,7 @@ lmme_tabs_open_recovery_entry(LmmeApp *app,
         g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_EXIST, "The original file is already open.");
         return FALSE;
     }
-    if (!open_file_contents(entry->recovery_path, &contents, error)) {
+    if (!open_recovery_contents(entry->recovery_path, &contents, error)) {
         return FALSE;
     }
 
