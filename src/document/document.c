@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 
 #include "document/document.h"
+#include "document/tabs.h"
 
 #include "app/app.h"
 #include "document/document_autosave.h"
@@ -18,36 +19,92 @@
 static void on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data);
 static void on_cursor_moved(GObject *object, GParamSpec *pspec, gpointer user_data);
 
+#define LMME_DOCUMENT_STATS_DEBOUNCE_MS 250
+
+static gboolean
+document_is_active_tab(const LmmeDocument *doc)
+{
+    return doc != NULL && doc->app != NULL && lmme_tabs_get_active(doc->app) == doc;
+}
+
+static gsize
+document_buffer_byte_length(const LmmeDocument *doc)
+{
+    GtkTextIter start;
+    GtkTextIter end;
+
+    gtk_text_buffer_get_bounds(GTK_TEXT_BUFFER(doc->buffer), &start, &end);
+    return (gsize)gtk_text_iter_get_offset(&end);
+}
+
+static void
+document_update_word_count_now(LmmeDocument *doc)
+{
+    g_autofree char *text = NULL;
+
+    if (document_buffer_byte_length(doc) > LMME_DOCUMENT_WORD_COUNT_MAX_BYTES) {
+        doc->word_count_valid = FALSE;
+        doc->word_count_dirty = FALSE;
+        return;
+    }
+
+    text = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
+    doc->word_count = lmme_word_count(text);
+    doc->word_count_valid = TRUE;
+    doc->word_count_dirty = FALSE;
+}
+
 static gboolean
 stats_timeout_cb(gpointer user_data)
 {
     LmmeDocument *doc = user_data;
-    g_autofree char *text = NULL;
 
     doc->stats_timeout_id = 0;
-    if (!doc->word_count_dirty || !doc->app->config.show_statusbar ||
-        doc->app->status_label == NULL || !gtk_widget_get_visible(doc->app->status_label)) {
+    if (!doc->word_count_dirty || !document_is_active_tab(doc) ||
+        !doc->app->config.show_statusbar || doc->app->status_label == NULL ||
+        !gtk_widget_get_visible(doc->app->status_label)) {
         return G_SOURCE_REMOVE;
     }
-    text = lmme_editor_dup_text(GTK_TEXT_BUFFER(doc->buffer));
-    doc->word_count = lmme_word_count(text);
-    doc->word_count_dirty = FALSE;
+
+    document_update_word_count_now(doc);
     lmme_window_update_status(doc->app);
     return G_SOURCE_REMOVE;
 }
 
-static void
-schedule_stats_update(LmmeDocument *doc)
+void
+lmme_document_mark_stats_dirty(LmmeDocument *doc)
 {
+    if (doc == NULL) {
+        return;
+    }
     doc->word_count_dirty = TRUE;
+}
+
+void
+lmme_document_request_stats_update(LmmeDocument *doc)
+{
+    if (doc == NULL || !document_is_active_tab(doc)) {
+        return;
+    }
+    if (!doc->word_count_dirty) {
+        return;
+    }
     if (doc->stats_timeout_id != 0) {
         g_source_remove(doc->stats_timeout_id);
         doc->stats_timeout_id = 0;
     }
     if (doc->app->config.show_statusbar && doc->app->status_label != NULL &&
         gtk_widget_get_visible(doc->app->status_label)) {
-        doc->stats_timeout_id = g_timeout_add(250, stats_timeout_cb, doc);
+        doc->stats_timeout_id = g_timeout_add(LMME_DOCUMENT_STATS_DEBOUNCE_MS,
+                                              stats_timeout_cb,
+                                              doc);
     }
+}
+
+gboolean
+lmme_document_word_count_is_valid(const LmmeDocument *doc)
+{
+    return doc != NULL && doc->word_count_valid;
 }
 
 void
@@ -125,7 +182,16 @@ lmme_document_new(LmmeApp *app, const char *path, const char *contents, const ch
     lmme_image_insert_setup_for_document(doc);
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(doc->buffer), contents != NULL ? contents : "", -1);
     gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc->buffer), FALSE);
-    doc->word_count = lmme_word_count(contents != NULL ? contents : "");
+    if (contents != NULL && strlen(contents) <= LMME_DOCUMENT_WORD_COUNT_MAX_BYTES) {
+        doc->word_count = lmme_word_count(contents);
+        doc->word_count_valid = TRUE;
+    } else if (contents == NULL) {
+        doc->word_count = 0;
+        doc->word_count_valid = TRUE;
+    } else {
+        doc->word_count = 0;
+        doc->word_count_valid = FALSE;
+    }
 
     doc->changed_handler_id = g_signal_connect(doc->buffer, "changed", G_CALLBACK(on_buffer_changed), doc);
     g_signal_connect(doc->buffer, "notify::cursor-position", G_CALLBACK(on_cursor_moved), doc);
@@ -387,7 +453,8 @@ on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data)
     (void)buffer;
 
     doc->content_revision++;
-    schedule_stats_update(doc);
+    lmme_document_mark_stats_dirty(doc);
+    lmme_document_request_stats_update(doc);
     doc->preview_dirty = TRUE;
     lmme_document_set_save_state(doc, LMME_SAVE_STATE_MODIFIED);
     if (!doc->app->scheduling_blocked) {

@@ -3,6 +3,7 @@
 #include "app/app.h"
 #include "document/document.h"
 #include "document/document_autosave.h"
+#include "document/document.h"
 #include "document/file_io.h"
 #include "infra/file_fingerprint.h"
 #include "document/recovery.h"
@@ -61,6 +62,8 @@ lmme_document_reload_from_disk(LmmeDocument *doc,
     doc->restored_from_recovery = FALSE;
     doc->recovery_failed = FALSE;
     lmme_document_set_save_state(doc, LMME_SAVE_STATE_SAVED);
+    lmme_document_mark_stats_dirty(doc);
+    lmme_document_request_stats_update(doc);
     if (doc->app->preview_enabled) {
         (void)lmme_document_set_preview_visible(doc, TRUE);
     }

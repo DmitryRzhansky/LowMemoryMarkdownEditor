@@ -218,14 +218,14 @@ test_recovery_failure_is_independent_of_document_state(void)
     doc.recovery_failed = TRUE;
     doc.disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
     g_assert_cmpstr(lmme_document_save_state_label(&doc), ==, "Conflict");
-    status = lmme_statusbar_format_document(&doc, 12, 4, 350, FALSE);
+    status = lmme_statusbar_format_document(&doc, 12, 4, 350, TRUE, FALSE);
     g_assert_cmpstr(status,
                     ==,
                     "note.md | Ln 12, Col 4 | 350 words | Conflict | Recovery failed | Source");
     g_clear_pointer(&status, g_free);
     doc.disk_state = LMME_DISK_STATE_EXTERNAL_DELETED;
     g_assert_cmpstr(lmme_document_save_state_label(&doc), ==, "Deleted");
-    status = lmme_statusbar_format_document(&doc, 12, 4, 350, TRUE);
+    status = lmme_statusbar_format_document(&doc, 12, 4, 350, TRUE, TRUE);
     g_assert_nonnull(strstr(status, "Deleted | Recovery failed | Editable Preview"));
     g_clear_pointer(&status, g_free);
     doc.disk_state = LMME_DISK_STATE_NORMAL;
@@ -797,7 +797,7 @@ test_recovery_cleanup_failure_status_label(void)
     doc.relative_path = relative_path;
     doc.save_state = LMME_SAVE_STATE_SAVED;
     doc.recovery_cleanup_failed = TRUE;
-    status = lmme_statusbar_format_document(&doc, 3, 1, 10, FALSE);
+    status = lmme_statusbar_format_document(&doc, 3, 1, 10, TRUE, FALSE);
     g_assert_nonnull(strstr(status, "Saved | Recovery cleanup failed | Source"));
 }
 
@@ -1053,6 +1053,30 @@ test_external_conflict_cancel_before_idle_is_safe(void)
     g_assert_cmpint(doc.external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_IDLE);
 }
 
+static void
+test_inactive_document_does_not_schedule_word_count(void)
+{
+    LmmeApp app = {0};
+    LmmeDocument doc = {0};
+
+    doc.app = &app;
+    lmme_document_mark_stats_dirty(&doc);
+    lmme_document_request_stats_update(&doc);
+    g_assert_cmpuint(doc.stats_timeout_id, ==, 0);
+}
+
+static void
+test_statusbar_shows_dash_when_word_count_invalid(void)
+{
+    LmmeDocument doc = {0};
+    g_autofree char *status = NULL;
+
+    doc.relative_path = g_strdup("note.md");
+    status = lmme_statusbar_format_document(&doc, 4, 2, 0, FALSE, FALSE);
+    g_assert_nonnull(g_strstr_len(status, -1, "— words"));
+    g_free(doc.relative_path);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1096,5 +1120,9 @@ main(int argc, char **argv)
                     test_external_conflict_reload_failure_keeps_modified);
     g_test_add_func("/document/external-conflict/cancel-idle",
                     test_external_conflict_cancel_before_idle_is_safe);
+    g_test_add_func("/document/word-count/inactive-no-timeout",
+                    test_inactive_document_does_not_schedule_word_count);
+    g_test_add_func("/document/word-count/invalid-status",
+                    test_statusbar_shows_dash_when_word_count_invalid);
     return g_test_run();
 }

@@ -11,6 +11,7 @@ lmme_statusbar_format_document(const LmmeDocument *doc,
                                int line,
                                int column,
                                guint words,
+                               gboolean words_valid,
                                gboolean preview_enabled)
 {
     const char *recovery_status = "";
@@ -24,11 +25,20 @@ lmme_statusbar_format_document(const LmmeDocument *doc,
     if (doc == NULL) {
         return g_strdup("No file opened");
     }
-    return g_strdup_printf("%s | Ln %d, Col %d | %u words | %s%s | %s",
+    if (words_valid) {
+        return g_strdup_printf("%s | Ln %d, Col %d | %u words | %s%s | %s",
+                               doc->relative_path,
+                               line,
+                               column,
+                               words,
+                               lmme_document_save_state_label(doc),
+                               recovery_status,
+                               preview_enabled ? "Editable Preview" : "Source");
+    }
+    return g_strdup_printf("%s | Ln %d, Col %d | — words | %s%s | %s",
                            doc->relative_path,
                            line,
                            column,
-                           words,
                            lmme_document_save_state_label(doc),
                            recovery_status,
                            preview_enabled ? "Editable Preview" : "Source");
@@ -60,6 +70,7 @@ lmme_statusbar_update(LmmeApp *app)
                                                              line,
                                                              column,
                                                              words,
+                                                             lmme_document_word_count_is_valid(doc),
                                                              app->preview_enabled);
     gtk_label_set_text(GTK_LABEL(app->status_label), status);
 }

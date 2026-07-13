@@ -42,6 +42,12 @@ on_notebook_switch_page(GtkNotebook *notebook, GtkWidget *page, guint page_num, 
     } else {
         lmme_window_update_status(app);
     }
+    {
+        LmmeDocument *active = lmme_tabs_get_active(app);
+        if (active != NULL) {
+            lmme_document_request_stats_update(active);
+        }
+    }
 }
 
 static gboolean

@@ -13,6 +13,7 @@ char *lmme_statusbar_format_document(const LmmeDocument *doc,
                                      int line,
                                      int column,
                                      guint words,
+                                     gboolean words_valid,
                                      gboolean preview_enabled);
 
 #endif

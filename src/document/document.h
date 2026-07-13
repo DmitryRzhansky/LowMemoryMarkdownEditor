@@ -62,6 +62,7 @@ struct _LmmeDocument {
     guint stats_timeout_id;
     guint word_count;
     gboolean word_count_dirty;
+    gboolean word_count_valid;
     gulong changed_handler_id;
     gboolean preview_dirty;
     gboolean preview_active_line_valid;
@@ -108,6 +109,10 @@ LmmeDocumentSaveResult lmme_document_overwrite(LmmeDocument *doc, GError **error
 LmmeDocumentSaveResult lmme_document_save_as(LmmeDocument *doc,
                                              const char *new_path,
                                              GError **error);
+#define LMME_DOCUMENT_WORD_COUNT_MAX_BYTES (2U * 1024U * 1024U)
+void lmme_document_mark_stats_dirty(LmmeDocument *doc);
+void lmme_document_request_stats_update(LmmeDocument *doc);
+gboolean lmme_document_word_count_is_valid(const LmmeDocument *doc);
 guint lmme_document_cached_word_count(const LmmeDocument *doc);
 LmmePreviewApplyResult lmme_document_set_preview_visible(LmmeDocument *doc, gboolean visible);
 void lmme_document_update_preview_active_line(LmmeDocument *doc);
