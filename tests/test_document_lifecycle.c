@@ -10,6 +10,7 @@
 #include "document/file_monitor.h"
 #include "document/recovery.h"
 #include "document/recovery_test.h"
+#include "document/tabs.h"
 #include "document/tabs_test.h"
 #include "editor/preview.h"
 #include "infra/safe_write_test.h"
@@ -256,12 +257,12 @@ test_discard_close_disposition_is_committed_explicitly(void)
                                       NULL));
 
     doc.pending_close = LMME_PENDING_CLOSE_KEEP_RECOVERY;
-    lmme_tabs_test_commit_close_disposition(&doc);
+    g_assert_true(lmme_tabs_test_commit_close_disposition(&doc, NULL));
     g_assert_cmpint(doc.pending_close, ==, LMME_PENDING_CLOSE_NONE);
     g_assert_true(lmme_recovery_exists(app.recovery_store, original));
 
     doc.pending_close = LMME_PENDING_CLOSE_DISCARD_LOCAL;
-    lmme_tabs_test_commit_close_disposition(&doc);
+    g_assert_true(lmme_tabs_test_commit_close_disposition(&doc, NULL));
     g_assert_cmpint(doc.pending_close, ==, LMME_PENDING_CLOSE_NONE);
     g_assert_false(lmme_recovery_exists(app.recovery_store, original));
 
@@ -269,6 +270,98 @@ test_discard_close_disposition_is_committed_explicitly(void)
     remove_directory_contents(cache);
     g_rmdir(cache);
     g_unlink(original);
+    g_rmdir(root);
+}
+
+static void
+test_discard_close_failure_keeps_pending_close(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-document-discard-fail-XXXXXX", NULL);
+    g_autofree char *cache = g_build_filename(root, "recovery", NULL);
+    g_autofree char *original = g_build_filename(root, "note.md", NULL);
+    g_autoptr(GError) error = NULL;
+    LmmeApp app = {0};
+    LmmeDocument doc = {0};
+
+    g_assert_cmpint(g_mkdir(cache, 0700), ==, 0);
+    g_assert_true(g_file_set_contents(original, "disk", -1, NULL));
+    app.recovery_store = lmme_recovery_store_new(cache);
+    doc.app = &app;
+    doc.path = original;
+    doc.relative_path = (char *)"note.md";
+    g_assert_true(lmme_recovery_write(app.recovery_store, original, root, NULL, "local", 5, NULL));
+
+    doc.pending_close = LMME_PENDING_CLOSE_DISCARD_LOCAL;
+    lmme_recovery_test_fail_at(LMME_RECOVERY_TEST_FAIL_ACTIVE_PAYLOAD_UNLINK, 1);
+    g_assert_false(lmme_tabs_test_commit_close_disposition(&doc, &error));
+    g_assert_nonnull(error);
+    g_assert_cmpint(doc.pending_close, ==, LMME_PENDING_CLOSE_DISCARD_LOCAL);
+    lmme_recovery_test_reset();
+
+    g_assert_true(lmme_tabs_test_commit_close_disposition(&doc, NULL));
+    g_assert_cmpint(doc.pending_close, ==, LMME_PENDING_CLOSE_NONE);
+    g_assert_false(lmme_recovery_exists(app.recovery_store, original));
+
+    lmme_recovery_store_free(app.recovery_store);
+    remove_directory_contents(cache);
+    g_rmdir(cache);
+    g_unlink(original);
+    g_rmdir(root);
+}
+
+static void
+test_bulk_close_commit_failure_keeps_all_documents(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-document-bulk-commit-XXXXXX", NULL);
+    g_autofree char *cache = g_build_filename(root, "recovery", NULL);
+    g_autofree char *first_path = g_build_filename(root, "first.md", NULL);
+    g_autofree char *second_path = g_build_filename(root, "second.md", NULL);
+    g_autoptr(GPtrArray) documents = NULL;
+    g_autoptr(GError) error = NULL;
+    LmmeApp app = {0};
+    LmmeDocument *first = NULL;
+    LmmeDocument *second = NULL;
+
+    g_assert_cmpint(g_mkdir(cache, 0700), ==, 0);
+    g_assert_true(g_file_set_contents(first_path, "one", -1, NULL));
+    g_assert_true(g_file_set_contents(second_path, "two", -1, NULL));
+    app.workspace = lmme_workspace_new(root);
+    app.recovery_store = lmme_recovery_store_new(cache);
+    app.documents = g_ptr_array_new();
+    first = test_document_new(&app, first_path, "local one");
+    second = test_document_new(&app, second_path, "local two");
+    g_ptr_array_add(app.documents, first);
+    g_ptr_array_add(app.documents, second);
+    g_assert_true(lmme_document_flush_recovery(first, NULL));
+    g_assert_true(lmme_document_flush_recovery(second, NULL));
+
+    first->pending_close = LMME_PENDING_CLOSE_DISCARD_LOCAL;
+    second->pending_close = LMME_PENDING_CLOSE_DISCARD_LOCAL;
+    documents = g_ptr_array_new();
+    g_ptr_array_add(documents, first);
+    g_ptr_array_add(documents, second);
+
+    lmme_recovery_test_fail_at(LMME_RECOVERY_TEST_FAIL_ACTIVE_PAYLOAD_UNLINK, 2);
+    g_assert_false(lmme_tabs_commit_pending_dispositions(&app, &error));
+    g_assert_nonnull(error);
+    lmme_recovery_test_reset();
+
+    g_assert_cmpuint(app.documents->len, ==, 2);
+    g_assert_cmpint(first->pending_close, ==, LMME_PENDING_CLOSE_NONE);
+    g_assert_cmpint(second->pending_close, ==, LMME_PENDING_CLOSE_DISCARD_LOCAL);
+    g_assert_false(lmme_recovery_exists(app.recovery_store, first_path));
+    g_assert_true(lmme_recovery_exists(app.recovery_store, second_path));
+
+    lmme_document_free(second);
+    g_ptr_array_remove_index(app.documents, 1);
+    lmme_document_free(first);
+    g_ptr_array_unref(app.documents);
+    lmme_recovery_store_free(app.recovery_store);
+    lmme_workspace_free(app.workspace);
+    remove_directory_contents(cache);
+    g_rmdir(cache);
+    g_unlink(first_path);
+    g_unlink(second_path);
     g_rmdir(root);
 }
 
@@ -815,6 +908,10 @@ main(int argc, char **argv)
                     test_recovery_failure_is_independent_of_document_state);
     g_test_add_func("/document/close/discard-commit",
                     test_discard_close_disposition_is_committed_explicitly);
+    g_test_add_func("/document/close/discard-failure",
+                    test_discard_close_failure_keeps_pending_close);
+    g_test_add_func("/document/close/bulk-commit-failure",
+                    test_bulk_close_commit_failure_keeps_all_documents);
     g_test_add_func("/document/recovery/external-states",
                     test_external_states_consume_recovery_failure);
     g_test_add_func("/document/preview-cursor-incremental", test_cursor_preview_update_does_not_full_parse);

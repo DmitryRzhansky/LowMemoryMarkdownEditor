@@ -25,7 +25,8 @@ gboolean lmme_tabs_close_tabs_to_left(LmmeApp *app, LmmeDocument *anchor);
 gboolean lmme_tabs_close_other_tabs(LmmeApp *app, LmmeDocument *anchor);
 gboolean lmme_tabs_close_all(LmmeApp *app);
 gboolean lmme_tabs_prepare_close_all(LmmeApp *app);
-void lmme_tabs_commit_close_all(LmmeApp *app);
+gboolean lmme_tabs_commit_pending_dispositions(LmmeApp *app, GError **error);
+gboolean lmme_tabs_commit_close_all(LmmeApp *app, GError **error);
 void lmme_tabs_resume_pending_saves(LmmeApp *app);
 /* Owned array containing borrowed LmmeDocument pointers. */
 GPtrArray *lmme_tabs_find_in_subtree(LmmeApp *app, const char *root);

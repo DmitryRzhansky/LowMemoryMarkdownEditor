@@ -236,7 +236,14 @@ lmme_window_open_workspace_path(LmmeApp *app, const char *path)
         return FALSE;
     }
     if (app->documents != NULL && app->documents->len > 0) {
-        lmme_tabs_commit_close_all(app);
+        g_autoptr(GError) commit_error = NULL;
+        if (!lmme_tabs_commit_close_all(app, &commit_error)) {
+            lmme_workspace_free(workspace);
+            lmme_dialog_error(GTK_WINDOW(app->window),
+                              "Could not close open documents.",
+                              commit_error != NULL ? commit_error->message : NULL);
+            return FALSE;
+        }
     }
 
     lmme_file_tree_populate(app->tree_view,

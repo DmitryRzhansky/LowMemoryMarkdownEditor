@@ -376,34 +376,82 @@ prepare_document_snapshot(GPtrArray *documents)
                                             NULL);
 }
 
-static void
-commit_close_disposition(LmmeDocument *doc)
+static gboolean
+commit_close_disposition(LmmeDocument *doc, GError **error)
 {
     if (doc == NULL) {
-        return;
+        return TRUE;
+    }
+    if (doc->pending_close == LMME_PENDING_CLOSE_KEEP_RECOVERY) {
+        doc->pending_close = LMME_PENDING_CLOSE_NONE;
+        return TRUE;
     }
     if (doc->pending_close == LMME_PENDING_CLOSE_DISCARD_LOCAL) {
-        (void)lmme_recovery_remove(doc->app->recovery_store, doc->path, NULL);
+        g_autoptr(GError) local_error = NULL;
+
+        if (!lmme_recovery_remove(doc->app->recovery_store, doc->path, &local_error)) {
+            g_propagate_prefixed_error(error,
+                                       g_steal_pointer(&local_error),
+                                       "Could not discard recovery data for \"%s\"",
+                                       doc->relative_path != NULL ? doc->relative_path : doc->path);
+            return FALSE;
+        }
+        doc->pending_close = LMME_PENDING_CLOSE_NONE;
     }
-    doc->pending_close = LMME_PENDING_CLOSE_NONE;
+    return TRUE;
 }
 
-void
-lmme_tabs_test_commit_close_disposition(LmmeDocument *doc)
+gboolean
+lmme_tabs_test_commit_close_disposition(LmmeDocument *doc, GError **error)
 {
-    commit_close_disposition(doc);
+    return commit_close_disposition(doc, error);
+}
+
+static gboolean
+commit_dispositions_for_documents(GPtrArray *documents, GError **error)
+{
+    if (documents == NULL) {
+        return TRUE;
+    }
+    for (guint i = 0; i < documents->len; i++) {
+        LmmeDocument *doc = g_ptr_array_index(documents, i);
+        if (doc->pending_close == LMME_PENDING_CLOSE_NONE) {
+            continue;
+        }
+        if (!commit_close_disposition(doc, error)) {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+gboolean
+lmme_tabs_commit_pending_dispositions(LmmeApp *app, GError **error)
+{
+    if (app == NULL || app->documents == NULL) {
+        return TRUE;
+    }
+    for (guint i = 0; i < app->documents->len; i++) {
+        LmmeDocument *doc = g_ptr_array_index(app->documents, i);
+        if (doc->pending_close == LMME_PENDING_CLOSE_NONE) {
+            continue;
+        }
+        if (!commit_close_disposition(doc, error)) {
+            return FALSE;
+        }
+    }
+    return TRUE;
 }
 
 static void
-commit_document_snapshot(LmmeApp *app,
-                         GPtrArray *documents,
-                         LmmeDocument *anchor)
+remove_documents_from_snapshot(LmmeApp *app,
+                             GPtrArray *documents,
+                             LmmeDocument *anchor)
 {
-
     for (guint i = 0; i < documents->len; i++) {
         LmmeDocument *doc = g_ptr_array_index(documents, i);
         int page = gtk_notebook_page_num(GTK_NOTEBOOK(app->notebook), doc->scroller);
-        commit_close_disposition(doc);
+
         if (page >= 0) {
             gtk_notebook_remove_page(GTK_NOTEBOOK(app->notebook), page);
         }
@@ -421,14 +469,36 @@ commit_document_snapshot(LmmeApp *app,
 }
 
 static gboolean
+commit_document_snapshot(LmmeApp *app,
+                         GPtrArray *documents,
+                         LmmeDocument *anchor,
+                         GError **error)
+{
+    if (!commit_dispositions_for_documents(documents, error)) {
+        return FALSE;
+    }
+    remove_documents_from_snapshot(app, documents, anchor);
+    return TRUE;
+}
+
+static gboolean
 close_document_snapshot(LmmeApp *app,
                         GPtrArray *documents,
                         LmmeDocument *anchor)
 {
+    g_autoptr(GError) error = NULL;
+
     if (!prepare_document_snapshot(documents)) {
         return FALSE;
     }
-    commit_document_snapshot(app, documents, anchor);
+    if (!commit_document_snapshot(app, documents, anchor, &error)) {
+        if (app->window != NULL) {
+            lmme_dialog_error(GTK_WINDOW(app->window),
+                              "Could not close documents.",
+                              error != NULL ? error->message : NULL);
+        }
+        return FALSE;
+    }
     return TRUE;
 }
 
@@ -437,6 +507,7 @@ lmme_tabs_close_active(LmmeApp *app)
 {
     LmmeDocument *doc = lmme_tabs_get_active(app);
     int page = doc != NULL ? gtk_notebook_page_num(GTK_NOTEBOOK(app->notebook), doc->scroller) : -1;
+    g_autoptr(GError) error = NULL;
 
     if (doc == NULL || page < 0) {
         return;
@@ -445,8 +516,14 @@ lmme_tabs_close_active(LmmeApp *app)
     if (!prepare_document_close(doc)) {
         return;
     }
-
-    commit_close_disposition(doc);
+    if (!commit_close_disposition(doc, &error)) {
+        if (app->window != NULL) {
+            lmme_dialog_error(GTK_WINDOW(app->window),
+                              "Could not close the document.",
+                              error != NULL ? error->message : NULL);
+        }
+        return;
+    }
     gtk_notebook_remove_page(GTK_NOTEBOOK(app->notebook), page);
     remove_document(app, doc);
     lmme_window_update_status(app);
@@ -567,19 +644,23 @@ lmme_tabs_prepare_close_all(LmmeApp *app)
     return prepare_document_snapshot(app->documents);
 }
 
-void
-lmme_tabs_commit_close_all(LmmeApp *app)
+gboolean
+lmme_tabs_commit_close_all(LmmeApp *app, GError **error)
 {
     g_autoptr(GPtrArray) documents = NULL;
 
     if (app == NULL || app->notebook == NULL || app->documents == NULL) {
-        return;
+        return TRUE;
     }
     documents = snapshot_notebook_range(app,
                                         0,
                                         gtk_notebook_get_n_pages(GTK_NOTEBOOK(app->notebook)) - 1,
                                         NULL);
-    commit_document_snapshot(app, documents, NULL);
+    if (!commit_dispositions_for_documents(documents, error)) {
+        return FALSE;
+    }
+    remove_documents_from_snapshot(app, documents, NULL);
+    return TRUE;
 }
 
 void
@@ -634,7 +715,10 @@ lmme_tabs_forget_subtree(LmmeApp *app, const char *root)
         if (page >= 0) {
             gtk_notebook_remove_page(GTK_NOTEBOOK(app->notebook), page);
         }
-        lmme_recovery_remove(app->recovery_store, doc->path, NULL);
+        if (!lmme_recovery_remove(app->recovery_store, doc->path, NULL)) {
+            g_warning("Could not remove recovery data while forgetting subtree for \"%s\"",
+                      doc->relative_path != NULL ? doc->relative_path : doc->path);
+        }
         remove_document(app, doc);
     }
     lmme_window_update_status(app);
