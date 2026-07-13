@@ -4,6 +4,7 @@
 #include <glib.h>
 
 #include "document/document.h"
+#include "infra/file_fingerprint.h"
 
 typedef struct _LmmeDocument LmmeDocument;
 
@@ -33,6 +34,8 @@ gboolean lmme_external_conflict_reload_allowed(gboolean file_exists,
 /* doc is borrowed; attach/detach update only the monitor owned by doc. */
 void lmme_document_file_monitor_attach(LmmeDocument *doc);
 void lmme_document_file_monitor_detach(LmmeDocument *doc);
-gboolean lmme_document_resolve_external_conflict(LmmeDocument *doc);
+gboolean lmme_document_reload_from_disk(LmmeDocument *doc,
+                                        const LmmeFileFingerprint *fingerprint,
+                                        GError **error);
 
 #endif

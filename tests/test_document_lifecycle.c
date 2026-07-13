@@ -14,6 +14,7 @@
 #include "document/tabs_test.h"
 #include "editor/preview.h"
 #include "infra/safe_write_test.h"
+#include "ui/external_conflict.h"
 #include "ui/statusbar.h"
 #include "workspace/workspace.h"
 
@@ -914,6 +915,144 @@ test_save_as_uncertain_commit_switches_path_with_recovery(void)
     test_document_environment_clear(&app, doc, root, cache);
 }
 
+static void
+test_external_conflict_generation_blocks_stale_apply(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-external-generation-XXXXXX", NULL);
+    g_autofree char *original = g_build_filename(root, "note.md", NULL);
+    g_autoptr(GError) error = NULL;
+    LmmeApp app = {0};
+    LmmeDocument *doc = NULL;
+
+    g_assert_true(g_file_set_contents(original, "disk", -1, NULL));
+    app.workspace = lmme_workspace_new(root);
+    doc = test_document_new(&app, original, "local");
+    doc->disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
+    doc->external_change_generation = 2;
+    g_file_set_contents(original, "newer disk", -1, NULL);
+    g_assert_true(lmme_file_fingerprint_read(original, &doc->last_known_fingerprint, NULL));
+
+    g_assert_false(lmme_document_apply_external_conflict_choice(doc,
+                                                                LMME_EXTERNAL_CONFLICT_RELOAD,
+                                                                1,
+                                                                original,
+                                                                root,
+                                                                &error));
+    g_assert_nonnull(error);
+
+    g_clear_error(&error);
+    g_assert_true(lmme_document_apply_external_conflict_choice(doc,
+                                                               LMME_EXTERNAL_CONFLICT_KEEP_LOCAL,
+                                                               2,
+                                                               original,
+                                                               root,
+                                                               &error));
+    g_assert_no_error(error);
+
+    lmme_document_free(doc);
+    lmme_workspace_free(app.workspace);
+    g_unlink(original);
+    g_rmdir(root);
+}
+
+static void
+noop_buffer_changed(GtkTextBuffer *buffer, gpointer user_data)
+{
+    (void)buffer;
+    (void)user_data;
+}
+
+static void
+test_external_conflict_reload_success_clears_recovery(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-external-reload-XXXXXX", NULL);
+    g_autofree char *cache = g_build_filename(root, "recovery", NULL);
+    g_autofree char *original = g_build_filename(root, "note.md", NULL);
+    g_autoptr(GError) error = NULL;
+    LmmeFileFingerprint fingerprint = {0};
+    LmmeApp app = {0};
+    LmmeDocument *doc = NULL;
+
+    g_assert_true(g_file_set_contents(original, "disk text", -1, NULL));
+    app.workspace = lmme_workspace_new(root);
+    app.recovery_store = lmme_recovery_store_new(cache);
+    doc = test_document_new(&app, original, "local text");
+    doc->changed_handler_id =
+        g_signal_connect(doc->buffer, "changed", G_CALLBACK(noop_buffer_changed), NULL);
+    doc->disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
+    g_assert_true(lmme_recovery_write(app.recovery_store, original, root, NULL, "local text", 10, NULL));
+    g_file_set_contents(original, "disk text updated", -1, NULL);
+    g_assert_true(lmme_file_fingerprint_read(original, &doc->last_known_fingerprint, NULL));
+    g_assert_true(lmme_file_fingerprint_read(original, &fingerprint, NULL));
+
+    g_assert_true(lmme_document_apply_external_conflict_choice(doc,
+                                                               LMME_EXTERNAL_CONFLICT_RELOAD,
+                                                               doc->external_change_generation,
+                                                               original,
+                                                               root,
+                                                               &error));
+    g_assert_no_error(error);
+    g_assert_cmpint(doc->disk_state, ==, LMME_DISK_STATE_NORMAL);
+    g_assert_false(doc->modified);
+    g_assert_false(lmme_recovery_exists(app.recovery_store, original));
+
+    lmme_document_free(doc);
+    lmme_recovery_store_free(app.recovery_store);
+    lmme_workspace_free(app.workspace);
+    remove_directory_contents(cache);
+    g_rmdir(cache);
+    g_unlink(original);
+    g_rmdir(root);
+}
+
+static void
+test_external_conflict_reload_failure_keeps_modified(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-external-reload-fail-XXXXXX", NULL);
+    g_autofree char *original = g_build_filename(root, "note.md", NULL);
+    g_autoptr(GError) error = NULL;
+    LmmeFileFingerprint fingerprint = {0};
+    LmmeApp app = {0};
+    LmmeDocument *doc = NULL;
+
+    g_assert_true(g_file_set_contents(original, "disk", -1, NULL));
+    app.workspace = lmme_workspace_new(root);
+    doc = test_document_new(&app, original, "local");
+    doc->changed_handler_id =
+        g_signal_connect(doc->buffer, "changed", G_CALLBACK(noop_buffer_changed), NULL);
+    doc->disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
+    g_unlink(original);
+
+    g_assert_false(lmme_document_apply_external_conflict_choice(doc,
+                                                                LMME_EXTERNAL_CONFLICT_RELOAD,
+                                                                doc->external_change_generation,
+                                                                original,
+                                                                root,
+                                                                &error));
+    g_assert_nonnull(error);
+    g_assert_true(doc->modified);
+    g_assert_cmpint(doc->disk_state, ==, LMME_DISK_STATE_EXTERNAL_CHANGED);
+
+    lmme_document_free(doc);
+    lmme_workspace_free(app.workspace);
+    g_rmdir(root);
+}
+
+static void
+test_external_conflict_cancel_before_idle_is_safe(void)
+{
+    LmmeApp app = {0};
+    LmmeDocument doc = {0};
+
+    doc.app = &app;
+    doc.id = 3;
+    doc.disk_state = LMME_DISK_STATE_EXTERNAL_DELETED;
+    lmme_external_conflict_request(&doc);
+    g_assert_cmpint(doc.external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_SCHEDULED);
+    lmme_external_conflict_cancel(&doc);
+    g_assert_cmpint(doc.external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_IDLE);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -949,5 +1088,13 @@ main(int argc, char **argv)
                     test_external_states_consume_recovery_failure);
     g_test_add_func("/document/preview-cursor-incremental", test_cursor_preview_update_does_not_full_parse);
     g_test_add_func("/document/preview-table-lifecycle", test_preview_table_lifecycle);
+    g_test_add_func("/document/external-conflict/generation",
+                    test_external_conflict_generation_blocks_stale_apply);
+    g_test_add_func("/document/external-conflict/reload-success",
+                    test_external_conflict_reload_success_clears_recovery);
+    g_test_add_func("/document/external-conflict/reload-failure",
+                    test_external_conflict_reload_failure_keeps_modified);
+    g_test_add_func("/document/external-conflict/cancel-idle",
+                    test_external_conflict_cancel_before_idle_is_safe);
     return g_test_run();
 }

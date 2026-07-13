@@ -7,6 +7,7 @@
 #include "document/file_monitor.h"
 #include "document/tabs.h"
 #include "infra/dialogs.h"
+#include "ui/external_conflict.h"
 #include "ui/window.h"
 
 static void
@@ -27,7 +28,7 @@ action_save(LmmeApp *app)
     LmmeDocumentSaveResult result = LMME_DOCUMENT_SAVE_COMMITTED_DURABLE;
 
     if (doc != NULL && doc->disk_state != LMME_DISK_STATE_NORMAL) {
-        (void)lmme_document_resolve_external_conflict(doc);
+        lmme_external_conflict_request(doc);
     } else {
         result = lmme_tabs_save_active(app, &error);
     }

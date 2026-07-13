@@ -6,126 +6,35 @@
 #include "document/file_io.h"
 #include "infra/file_fingerprint.h"
 #include "document/recovery.h"
-#include "infra/dialogs.h"
 #include "infra/util.h"
+#include "ui/external_conflict.h"
 #include "ui/window.h"
-#include "workspace/workspace.h"
 
 #include <string.h>
 
-static gboolean reload_document_from_disk(LmmeDocument *doc,
-                                          const LmmeFileFingerprint *fingerprint,
-                                          GError **error);
-
-static char *
-recovered_save_path(const LmmeDocument *doc)
+static gboolean
+is_relevant_event(GFileMonitorEvent event_type)
 {
-    g_autofree char *directory = g_path_get_dirname(doc->path);
-    g_autofree char *base = g_path_get_basename(doc->path);
-    char *dot = strrchr(base, '.');
-    g_autofree char *name = NULL;
-
-    if (dot != NULL) {
-        *dot = '\0';
-    }
-    name = g_strdup_printf("%s-recovered.md", base);
-    return g_build_filename(directory, name, NULL);
+    return event_type == G_FILE_MONITOR_EVENT_CHANGES_DONE_HINT ||
+           event_type == G_FILE_MONITOR_EVENT_CREATED ||
+           event_type == G_FILE_MONITOR_EVENT_DELETED ||
+           event_type == G_FILE_MONITOR_EVENT_MOVED_IN ||
+           event_type == G_FILE_MONITOR_EVENT_MOVED_OUT ||
+           event_type == G_FILE_MONITOR_EVENT_RENAMED;
 }
 
 gboolean
-lmme_document_resolve_external_conflict(LmmeDocument *doc)
-{
-    LmmeExternalConflictChoice choice;
-    gboolean file_exists;
-    gboolean recovery_ok;
-    g_autoptr(GError) recovery_error = NULL;
-
-    if (doc == NULL || doc->disk_state == LMME_DISK_STATE_NORMAL) {
-        return TRUE;
-    }
-
-    file_exists = doc->disk_state != LMME_DISK_STATE_EXTERNAL_DELETED;
-    recovery_ok = lmme_document_flush_recovery(doc, &recovery_error);
-    if (!recovery_ok) {
-        lmme_dialog_error(GTK_WINDOW(doc->app->window),
-                          "Could not write recovery data.",
-                          recovery_error != NULL ? recovery_error->message : NULL);
-    }
-    choice = lmme_dialog_external_conflict(
-        GTK_WINDOW(doc->app->window),
-        doc->path,
-        file_exists,
-        lmme_external_conflict_reload_allowed(file_exists, recovery_ok));
-    if (choice == LMME_EXTERNAL_CONFLICT_RELOAD) {
-        LmmeFileFingerprint fingerprint = {0};
-        g_autoptr(GError) error = NULL;
-        if (!lmme_file_fingerprint_read(doc->path, &fingerprint, &error) ||
-            !fingerprint.exists ||
-            !reload_document_from_disk(doc, &fingerprint, &error)) {
-            lmme_dialog_error(GTK_WINDOW(doc->app->window),
-                              "Could not reload file.",
-                              error != NULL ? error->message : NULL);
-            return FALSE;
-        }
-        return TRUE;
-    }
-    if (choice == LMME_EXTERNAL_CONFLICT_SAVE_AS) {
-        g_autofree char *suggested = recovered_save_path(doc);
-        g_autofree char *path = lmme_dialog_save_markdown(GTK_WINDOW(doc->app->window), suggested);
-        g_autoptr(GError) error = NULL;
-        LmmeDocumentSaveResult result;
-        if (path == NULL) {
-            return FALSE;
-        }
-        if (g_file_test(path, G_FILE_TEST_EXISTS) &&
-            !lmme_dialog_confirm_overwrite(GTK_WINDOW(doc->app->window), path)) {
-            return FALSE;
-        }
-        result = lmme_document_save_as(doc, path, &error);
-        if (result == LMME_DOCUMENT_SAVE_NOT_COMMITTED) {
-            lmme_dialog_error(GTK_WINDOW(doc->app->window),
-                              "Could not save file.",
-                              error != NULL ? error->message : NULL);
-            return FALSE;
-        }
-        if (result == LMME_DOCUMENT_SAVE_COMMITTED_NOT_DURABLE) {
-            lmme_dialog_error(GTK_WINDOW(doc->app->window),
-                              "File was saved, but durability could not be confirmed.",
-                              error != NULL ? error->message : NULL);
-        }
-        lmme_window_refresh_tree_directory(doc->app, doc->app->workspace->path);
-        return TRUE;
-    }
-    if (choice == LMME_EXTERNAL_CONFLICT_OVERWRITE) {
-        g_autoptr(GError) error = NULL;
-        LmmeDocumentSaveResult result = lmme_document_overwrite(doc, &error);
-        if (result == LMME_DOCUMENT_SAVE_NOT_COMMITTED) {
-            lmme_dialog_error(GTK_WINDOW(doc->app->window),
-                              "Could not overwrite file.",
-                              error != NULL ? error->message : NULL);
-            return FALSE;
-        }
-        if (result == LMME_DOCUMENT_SAVE_COMMITTED_NOT_DURABLE) {
-            lmme_dialog_error(GTK_WINDOW(doc->app->window),
-                              "File was saved, but durability could not be confirmed.",
-                              error != NULL ? error->message : NULL);
-        }
-        lmme_window_refresh_tree_directory(doc->app, doc->app->workspace->path);
-        return TRUE;
-    }
-
-    lmme_window_update_status(doc->app);
-    return FALSE;
-}
-
-static gboolean
-reload_document_from_disk(LmmeDocument *doc,
-                          const LmmeFileFingerprint *fingerprint,
-                          GError **error)
+lmme_document_reload_from_disk(LmmeDocument *doc,
+                               const LmmeFileFingerprint *fingerprint,
+                               GError **error)
 {
     g_autofree char *contents = NULL;
     gsize length = 0;
 
+    if (doc == NULL || fingerprint == NULL) {
+        g_set_error_literal(error, G_FILE_ERROR, G_FILE_ERROR_INVAL, "Invalid reload request.");
+        return FALSE;
+    }
     if (!lmme_file_read_utf8(doc->path, G_MAXINT, &contents, &length, error)) {
         return FALSE;
     }
@@ -156,17 +65,6 @@ reload_document_from_disk(LmmeDocument *doc,
         (void)lmme_document_set_preview_visible(doc, TRUE);
     }
     return TRUE;
-}
-
-static gboolean
-is_relevant_event(GFileMonitorEvent event_type)
-{
-    return event_type == G_FILE_MONITOR_EVENT_CHANGES_DONE_HINT ||
-           event_type == G_FILE_MONITOR_EVENT_CREATED ||
-           event_type == G_FILE_MONITOR_EVENT_DELETED ||
-           event_type == G_FILE_MONITOR_EVENT_MOVED_IN ||
-           event_type == G_FILE_MONITOR_EVENT_MOVED_OUT ||
-           event_type == G_FILE_MONITOR_EVENT_RENAMED;
 }
 
 LmmeFileChangeAction
@@ -204,6 +102,13 @@ lmme_external_conflict_reload_allowed(gboolean file_exists,
                                       gboolean recovery_durable)
 {
     return file_exists && recovery_durable;
+}
+
+static void
+note_external_conflict(LmmeDocument *doc)
+{
+    doc->external_change_generation++;
+    lmme_external_conflict_request(doc);
 }
 
 static void
@@ -247,12 +152,12 @@ on_file_monitor_changed(GFileMonitor *monitor,
         doc->disk_state = LMME_DISK_STATE_EXTERNAL_DELETED;
         lmme_document_cancel_autosave(doc);
         lmme_window_update_status(doc->app);
-        (void)lmme_document_resolve_external_conflict(doc);
+        note_external_conflict(doc);
         return;
     }
 
     if (action == LMME_FILE_CHANGE_RELOAD) {
-        if (!reload_document_from_disk(doc, &current, &error)) {
+        if (!lmme_document_reload_from_disk(doc, &current, &error)) {
             lmme_window_set_status_error(doc->app, "Could not reload externally changed file");
         }
         return;
@@ -261,7 +166,7 @@ on_file_monitor_changed(GFileMonitor *monitor,
     doc->disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
     lmme_document_cancel_autosave(doc);
     lmme_window_update_status(doc->app);
-    (void)lmme_document_resolve_external_conflict(doc);
+    note_external_conflict(doc);
 }
 
 void

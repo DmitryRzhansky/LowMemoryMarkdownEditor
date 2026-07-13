@@ -6,6 +6,7 @@
 
 #include "infra/file_fingerprint.h"
 #include "editor/preview.h"
+#include "ui/external_conflict.h"
 
 typedef struct _LmmeApp LmmeApp;
 typedef struct _LmmeDocument LmmeDocument;
@@ -71,6 +72,10 @@ struct _LmmeDocument {
     LmmeFileFingerprint base_fingerprint;
     LmmeFileFingerprint expected_internal_fingerprint;
     gboolean has_expected_internal_fingerprint;
+    guint external_conflict_source_id;
+    LmmeExternalConflictState external_conflict_state;
+    gboolean external_change_pending;
+    guint64 external_change_generation;
     GCancellable *clipboard_cancellable;
 };
 

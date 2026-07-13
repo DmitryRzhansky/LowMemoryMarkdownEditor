@@ -10,6 +10,7 @@
 #include "editor/editor.h"
 #include "features/image_insert.h"
 #include "infra/util.h"
+#include "ui/external_conflict.h"
 #include "ui/window.h"
 #include "workspace/workspace.h"
 
@@ -363,6 +364,7 @@ lmme_document_free(LmmeDocument *doc)
 
     lmme_document_cancel_autosave(doc);
     lmme_document_cancel_recovery(doc);
+    lmme_external_conflict_cancel(doc);
     if (doc->stats_timeout_id != 0) {
         g_source_remove(doc->stats_timeout_id);
     }

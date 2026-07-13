@@ -71,6 +71,7 @@ core_sources = files(
   'src/ui/file_tree_view.c',
   'src/ui/tree_context_menu.c',
   'src/ui/tab_context_menu.c',
+  'src/ui/external_conflict.c',
 
   'src/command/command_registry.c',
   'src/command/command_actions.c',
