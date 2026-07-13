@@ -9,6 +9,7 @@
 typedef struct _LmmeDocument LmmeDocument;
 typedef struct _LmmeRecoveryStore LmmeRecoveryStore;
 typedef struct _LmmeWorkspace LmmeWorkspace;
+typedef struct _LmmeAppLifetime LmmeAppLifetime;
 
 typedef struct {
     char *path;
@@ -80,7 +81,13 @@ typedef struct _LmmeApp {
 
     /* Non-owning pointer to the tab that opened the current context menu. */
     LmmeDocument *tab_context_document;
+
+    LmmeAppLifetime *lifetime;
 } LmmeApp;
+
+LmmeAppLifetime *lmme_app_lifetime_ref(LmmeApp *app);
+void lmme_app_lifetime_unref(LmmeAppLifetime *lifetime);
+LmmeApp *lmme_app_lifetime_get_app(LmmeAppLifetime *lifetime);
 
 int lmme_app_run(int argc, char **argv);
 gboolean lmme_app_request_shutdown(LmmeApp *app);

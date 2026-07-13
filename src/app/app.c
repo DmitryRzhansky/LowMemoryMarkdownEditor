@@ -11,6 +11,53 @@
 #include "ui/window.h"
 #include "workspace/workspace.h"
 
+struct _LmmeAppLifetime {
+    gatomicrefcount ref_count;
+    LmmeApp *app;
+};
+
+static LmmeAppLifetime *
+lmme_app_lifetime_new(LmmeApp *app)
+{
+    LmmeAppLifetime *lifetime = g_new(LmmeAppLifetime, 1);
+
+    g_atomic_ref_count_init(&lifetime->ref_count);
+    lifetime->app = app;
+    return lifetime;
+}
+
+LmmeAppLifetime *
+lmme_app_lifetime_ref(LmmeApp *app)
+{
+    if (app == NULL || app->lifetime == NULL) {
+        return NULL;
+    }
+    g_atomic_ref_count_inc(&app->lifetime->ref_count);
+    return app->lifetime;
+}
+
+void
+lmme_app_lifetime_unref(LmmeAppLifetime *lifetime)
+{
+    if (lifetime != NULL && g_atomic_ref_count_dec(&lifetime->ref_count)) {
+        g_free(lifetime);
+    }
+}
+
+LmmeApp *
+lmme_app_lifetime_get_app(LmmeAppLifetime *lifetime)
+{
+    return lifetime != NULL ? lifetime->app : NULL;
+}
+
+static void
+lmme_app_invalidate_lifetime(LmmeApp *app)
+{
+    if (app != NULL && app->lifetime != NULL) {
+        app->lifetime->app = NULL;
+    }
+}
+
 static void lmme_app_save_session(LmmeApp *app);
 static void lmme_app_cancel_pending_work(LmmeApp *app);
 static void lmme_app_destroy_runtime_ui(LmmeApp *app);
@@ -134,6 +181,7 @@ lmme_app_cancel_pending_work(LmmeApp *app)
         return;
     }
 
+    lmme_app_invalidate_lifetime(app);
     lmme_command_actions_cancel_refresh(app);
     if (app->preview_timeout_id != 0) {
         g_source_remove(app->preview_timeout_id);
@@ -182,6 +230,7 @@ app_new(GtkApplication *gtk_app)
 
     app->preview_enabled = app->config.preview_enabled;
     app->focus_mode = FALSE;
+    app->lifetime = lmme_app_lifetime_new(app);
 
     return app;
 }
@@ -243,6 +292,12 @@ lmme_app_free(LmmeApp *app)
     lmme_path_context_clear(&app->tree_context);
     g_clear_pointer(&app->config_path, g_free);
     lmme_config_clear(&app->config);
+    if (app->lifetime != NULL) {
+        LmmeAppLifetime *lifetime = app->lifetime;
+        app->lifetime = NULL;
+        lifetime->app = NULL;
+        lmme_app_lifetime_unref(lifetime);
+    }
     g_free(app);
 }
 
@@ -307,6 +362,14 @@ lmme_app_test_drain_main_context(guint max_iterations)
         iterations++;
     }
     return FALSE;
+}
+
+void
+lmme_app_test_attach_lifetime(LmmeApp *app)
+{
+    if (app != NULL && app->lifetime == NULL) {
+        app->lifetime = lmme_app_lifetime_new(app);
+    }
 }
 
 #endif

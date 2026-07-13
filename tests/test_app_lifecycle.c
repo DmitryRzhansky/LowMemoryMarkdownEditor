@@ -12,6 +12,7 @@
 #include "document/recovery.h"
 #include "document/tabs.h"
 #include "document/tabs_test.h"
+#include "features/image_insert.h"
 #include "infra/config.h"
 #include "ui/external_conflict.h"
 #include "ui/window.h"
@@ -47,6 +48,7 @@ test_app_with_gtk_application(GtkApplication **out_gtk_app)
 
     app->gtk_app = gtk_app;
     app->documents = g_ptr_array_new();
+    lmme_app_test_attach_lifetime(app);
     *out_gtk_app = gtk_app;
     return app;
 }
@@ -55,6 +57,11 @@ static void
 test_app_fixture_teardown(LmmeApp *app, GtkApplication *gtk_app)
 {
     lmme_command_actions_cancel_refresh(app);
+    if (app->lifetime != NULL) {
+        lmme_app_test_cancel_pending_work(app);
+        lmme_app_lifetime_unref(app->lifetime);
+        app->lifetime = NULL;
+    }
     if (app->documents != NULL) {
         g_ptr_array_unref(app->documents);
     }
@@ -86,6 +93,7 @@ test_app_with_window(GtkApplication **out_gtk_app, char **out_root)
     app->preview_enabled = TRUE;
     app->config.preview_update_delay_ms = 50;
 
+    lmme_app_test_attach_lifetime(app);
     g_assert_true(g_application_register(G_APPLICATION(gtk_app), NULL, NULL));
     lmme_window_build(app);
     g_assert_true(lmme_window_open_workspace_path(app, root));
@@ -451,6 +459,58 @@ test_session_shutdown_signal(void)
     lmme_app_free(app);
 }
 
+typedef struct {
+    LmmeAppLifetime *lifetime;
+    gboolean finished;
+} ImageAsyncTestState;
+
+static void
+on_image_async_png_saved(GObject *source_object, GAsyncResult *result, gpointer user_data)
+{
+    ImageAsyncTestState *state = user_data;
+    g_autoptr(GError) error = NULL;
+
+    (void)source_object;
+    state->finished = lmme_image_texture_save_png_finish(GDK_TEXTURE(source_object), result, &error);
+    lmme_app_lifetime_unref(state->lifetime);
+    g_free(state);
+}
+
+static void
+test_image_async_survives_app_teardown(void)
+{
+    GtkApplication *gtk_app = NULL;
+    g_autofree char *root = NULL;
+    g_autofree char *note_path = NULL;
+    g_autofree char *png_path = NULL;
+    LmmeApp *app = test_app_with_window(&gtk_app, &root);
+    const guint8 pixels[] = {
+        255, 0, 0, 255,
+        0, 255, 0, 255,
+        0, 0, 255, 255,
+        255, 255, 255, 255,
+    };
+    g_autoptr(GBytes) bytes = g_bytes_new_static(pixels, sizeof(pixels));
+    g_autoptr(GdkTexture) texture = GDK_TEXTURE(gdk_memory_texture_new(2,
+                                                                       2,
+                                                                       GDK_MEMORY_R8G8B8A8,
+                                                                       bytes,
+                                                                       8));
+    ImageAsyncTestState *state = g_new0(ImageAsyncTestState, 1);
+
+    note_path = g_build_filename(root, "note.md", NULL);
+    png_path = g_build_filename(root, "img", "pending.png", NULL);
+    g_mkdir_with_parents(g_path_get_dirname(png_path), 0700);
+    g_assert_true(g_file_set_contents(note_path, "hello", -1, NULL));
+    g_assert_true(lmme_tabs_open_file(app, note_path, NULL));
+
+    state->lifetime = lmme_app_lifetime_ref(app);
+    lmme_image_texture_save_png_async(texture, png_path, NULL, on_image_async_png_saved, state);
+
+    test_full_app_teardown(app, gtk_app);
+    g_assert_true(drain_main_context(256));
+}
+
 int
 main(int argc, char **argv)
 {
@@ -470,5 +530,6 @@ main(int argc, char **argv)
                     test_teardown_shutdown_prepare_cancelled);
     g_test_add_func("/app/session/serialization", test_session_serialization);
     g_test_add_func("/app/session/shutdown-signal", test_session_shutdown_signal);
+    g_test_add_func("/app/image-async/survives-app-teardown", test_image_async_survives_app_teardown);
     return g_test_run();
 }

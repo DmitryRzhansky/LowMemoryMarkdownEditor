@@ -18,7 +18,7 @@
 #include <glib/gstdio.h>
 
 typedef struct {
-    LmmeApp *app;
+    LmmeAppLifetime *lifetime;
     guint64 document_id;
     char *workspace_path;
     char *destination_path;
@@ -115,10 +115,18 @@ image_insert_request_free(LmmeImageInsertRequest *request)
     if (request == NULL) {
         return;
     }
+    lmme_app_lifetime_unref(request->lifetime);
+    request->lifetime = NULL;
     g_clear_object(&request->cancellable);
     g_free(request->workspace_path);
     g_free(request->destination_path);
     g_free(request);
+}
+
+static LmmeApp *
+image_insert_request_app(const LmmeImageInsertRequest *request)
+{
+    return request != NULL ? lmme_app_lifetime_get_app(request->lifetime) : NULL;
 }
 
 gboolean
@@ -467,7 +475,7 @@ image_insert_request_begin_async(LmmeDocument *doc)
     doc->image_insert_cancellable = g_cancellable_new();
 
     request = g_new0(LmmeImageInsertRequest, 1);
-    request->app = doc->app;
+    request->lifetime = lmme_app_lifetime_ref(doc->app);
     request->document_id = doc->id;
     request->workspace_path = g_strdup(doc->app->workspace->path);
     request->cancellable = g_object_ref(doc->image_insert_cancellable);
@@ -543,7 +551,6 @@ lmme_image_insert_for_document(LmmeDocument *doc, const char *source_path)
     GtkWindow *parent = app != NULL && app->window != NULL ? GTK_WINDOW(app->window) : NULL;
     g_autoptr(GError) error = NULL;
     LmmeImageInsertRequest request = {
-        .app = app,
         .state = LMME_IMAGE_INSERT_PREPARING,
     };
     gboolean success = FALSE;
@@ -554,7 +561,9 @@ lmme_image_insert_for_document(LmmeDocument *doc, const char *source_path)
     }
 
     request.document_id = doc->id;
-    request.workspace_path = g_strdup(app->workspace != NULL ? app->workspace->path : NULL);
+    if (app != NULL && app->workspace != NULL) {
+        request.workspace_path = g_strdup(app->workspace->path);
+    }
 
     if (!image_insert_copy_source_for_request(doc, &request, source_path, parent, &error)) {
         if (error != NULL && g_error_matches(error, G_FILE_ERROR, G_FILE_ERROR_INVAL)) {
@@ -597,12 +606,18 @@ static void
 on_texture_saved(GObject *source_object, GAsyncResult *result, gpointer user_data)
 {
     LmmeImageInsertRequest *request = user_data;
-    LmmeDocument *doc = lmme_tabs_find_by_id(request->app, request->document_id);
+    LmmeApp *app = image_insert_request_app(request);
+    LmmeDocument *doc = app != NULL ? lmme_tabs_find_by_id(app, request->document_id) : NULL;
     g_autoptr(GError) error = NULL;
     gboolean saved = lmme_image_texture_save_png_finish(GDK_TEXTURE(source_object),
                                                         result,
                                                         &error);
     gboolean is_current = image_insert_request_is_current(doc, request);
+
+    if (app == NULL) {
+        image_insert_request_free(request);
+        return;
+    }
 
     if (saved) {
         lmme_image_insert_request_mark_file_created(&request->state,
@@ -623,9 +638,11 @@ on_texture_saved(GObject *source_object, GAsyncResult *result, gpointer user_dat
                                                          &request->destination_created_by_request,
                                                          request->destination_path);
     } else if (error == NULL || !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
-        lmme_dialog_error(GTK_WINDOW(request->app->window),
-                          "Could not save image.",
-                          error != NULL ? error->message : NULL);
+        if (app->window != NULL) {
+            lmme_dialog_error(GTK_WINDOW(app->window),
+                              "Could not save image.",
+                              error != NULL ? error->message : NULL);
+        }
     }
 
     image_insert_request_clear_document_cancellable(doc, request);
@@ -665,11 +682,19 @@ on_clipboard_texture_ready(GObject *source_object, GAsyncResult *result, gpointe
     GdkClipboard *clipboard = GDK_CLIPBOARD(source_object);
     g_autoptr(GError) error = NULL;
     GdkTexture *texture = gdk_clipboard_read_texture_finish(clipboard, result, &error);
-    LmmeDocument *doc = lmme_tabs_find_by_id(request->app, request->document_id);
+    LmmeApp *app = image_insert_request_app(request);
+    LmmeDocument *doc = app != NULL ? lmme_tabs_find_by_id(app, request->document_id) : NULL;
+
+    if (app == NULL) {
+        image_insert_request_free(request);
+        return;
+    }
 
     if (texture == NULL) {
         if (error == NULL || !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
-            lmme_dialog_error(GTK_WINDOW(request->app->window), "Clipboard does not contain an image.", NULL);
+            if (app->window != NULL) {
+                lmme_dialog_error(GTK_WINDOW(app->window), "Clipboard does not contain an image.", NULL);
+            }
         }
         image_insert_request_clear_document_cancellable(doc, request);
         image_insert_request_free(request);
