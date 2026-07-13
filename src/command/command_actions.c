@@ -2,6 +2,7 @@
 
 #include "command/command_handlers.h"
 #include "command/command_registry.h"
+#include "command/command_enabled.h"
 
 #include "app/app.h"
 
@@ -84,5 +85,37 @@ lmme_command_actions_register(LmmeApp *app)
         gtk_application_set_accels_for_action(app->gtk_app,
                                               detailed_action,
                                               command->default_accels);
+    }
+    lmme_command_actions_refresh(app);
+}
+
+void
+lmme_command_actions_refresh(LmmeApp *app)
+{
+    gsize count = 0;
+    const LmmeCommandDef *commands = NULL;
+    LmmeCommandContext context;
+
+    if (app == NULL || app->gtk_app == NULL) {
+        return;
+    }
+
+    commands = lmme_command_registry_get_all(&count);
+    lmme_command_context_fill_from_app(&context, app);
+    for (gsize i = 0; i < count; i++) {
+        const LmmeCommandDef *command = &commands[i];
+        GAction *action = g_action_map_lookup_action(G_ACTION_MAP(app->gtk_app),
+                                                     command->action_name);
+        gboolean enabled = FALSE;
+
+        if (action == NULL) {
+            continue;
+        }
+        if (command->is_enabled != NULL) {
+            enabled = command->is_enabled(app);
+        } else {
+            enabled = lmme_command_enabled_for_handler(command->handler, &context);
+        }
+        g_simple_action_set_enabled(G_SIMPLE_ACTION(action), enabled);
     }
 }

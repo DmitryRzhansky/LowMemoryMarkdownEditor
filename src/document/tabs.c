@@ -2,6 +2,7 @@
 #include "document/tabs_test.h"
 
 #include "app/app.h"
+#include "command/command_actions.h"
 #include "document/document_autosave.h"
 #include "document/file_io.h"
 #include "document/file_monitor.h"
@@ -119,7 +120,8 @@ lmme_tabs_get_active(LmmeApp *app)
     int page = -1;
     GtkWidget *child = NULL;
 
-    if (app == NULL || app->notebook == NULL || app->documents == NULL) {
+    if (app == NULL || app->notebook == NULL || app->documents == NULL ||
+        !GTK_IS_NOTEBOOK(app->notebook)) {
         return NULL;
     }
 
@@ -163,6 +165,7 @@ add_document_to_notebook(LmmeApp *app, LmmeDocument *doc)
     gtk_widget_grab_focus(doc->source_view);
     lmme_window_update_status(app);
     lmme_window_schedule_preview(app);
+    lmme_command_actions_refresh(app);
 }
 
 gboolean
@@ -174,6 +177,7 @@ lmme_tabs_open_file(LmmeApp *app, const char *path, GError **error)
     if (existing != NULL) {
         int page = gtk_notebook_page_num(GTK_NOTEBOOK(app->notebook), existing->scroller);
         gtk_notebook_set_current_page(GTK_NOTEBOOK(app->notebook), page);
+        lmme_command_actions_refresh(app);
         return TRUE;
     }
     if (!open_document_contents(path, &contents, error)) {
@@ -534,6 +538,7 @@ lmme_tabs_close_active(LmmeApp *app)
     remove_document(app, doc);
     lmme_window_update_status(app);
     lmme_window_schedule_preview(app);
+    lmme_command_actions_refresh(app);
 }
 
 gboolean

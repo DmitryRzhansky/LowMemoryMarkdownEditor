@@ -3,6 +3,7 @@
 #include <gtk/gtk.h>
 
 #include "app/app.h"
+#include "command/command_actions.h"
 #include "document/tabs.h"
 #include "infra/util.h"
 #include "ui/file_tree_view.h"
@@ -131,6 +132,7 @@ on_tree_right_click(GtkGestureClick *gesture, int n_press, double x, double y, g
     }
 
     tree_select_path_at_position(app, x, y);
+    lmme_command_actions_refresh(app);
     menu_model = create_tree_context_menu_model(app);
     if (g_menu_model_get_n_items(menu_model) == 0) {
         return;

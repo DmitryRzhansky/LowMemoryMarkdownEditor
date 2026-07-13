@@ -48,6 +48,7 @@ on_notebook_switch_page(GtkNotebook *notebook, GtkWidget *page, guint page_num, 
             lmme_document_request_stats_update(active);
         }
     }
+    lmme_command_actions_refresh(app);
 }
 
 static gboolean
@@ -265,6 +266,7 @@ lmme_window_open_workspace_path(LmmeApp *app, const char *path)
     lmme_window_refresh_tree(app);
     gtk_label_set_text(GTK_LABEL(app->breadcrumbs_label), app->workspace->path);
     lmme_window_update_status(app);
+    lmme_command_actions_refresh(app);
     return TRUE;
 }
 

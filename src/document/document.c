@@ -2,6 +2,7 @@
 
 #include "document/document.h"
 #include "document/tabs.h"
+#include "command/command_actions.h"
 
 #include "app/app.h"
 #include "document/document_autosave.h"
@@ -462,6 +463,9 @@ on_buffer_changed(GtkTextBuffer *buffer, gpointer user_data)
         lmme_document_schedule_autosave(doc);
     }
     lmme_window_schedule_preview(doc->app);
+    if (doc->app != NULL && doc->app->gtk_app != NULL && lmme_tabs_get_active(doc->app) == doc) {
+        lmme_command_actions_refresh(doc->app);
+    }
 }
 
 guint
@@ -482,5 +486,8 @@ on_cursor_moved(GObject *object, GParamSpec *pspec, gpointer user_data)
         lmme_window_update_status(doc->app);
     } else {
         lmme_window_update_status(doc->app);
+    }
+    if (doc->app->gtk_app != NULL && lmme_tabs_get_active(doc->app) == doc) {
+        lmme_command_actions_refresh(doc->app);
     }
 }

@@ -75,6 +75,7 @@ core_sources = files(
 
   'src/command/command_registry.c',
   'src/command/command_actions.c',
+  'src/command/command_enabled.c',
   'src/command/command_handlers.c',
   'src/command/command_file.c',
   'src/command/command_workspace.c',

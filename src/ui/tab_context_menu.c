@@ -1,6 +1,7 @@
 #include "ui/tab_context_menu.h"
 
 #include "app/app.h"
+#include "command/command_actions.h"
 #include "document/document.h"
 
 static GtkWidget *tab_context_popover;
@@ -78,6 +79,7 @@ on_tab_right_click(GtkGestureClick *gesture, int n_press, double x, double y, gp
 
     gtk_notebook_set_current_page(notebook, page);
     app->tab_context_document = doc;
+    lmme_command_actions_refresh(app);
     popover = get_tab_context_popover();
     anchor = app->root_box;
 

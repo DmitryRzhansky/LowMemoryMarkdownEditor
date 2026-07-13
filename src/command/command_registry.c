@@ -1,11 +1,12 @@
 #include "command/command_registry.h"
+#include "command/command_enabled.h"
 
 #include <gio/gio.h>
 
 #define COMMAND(command_id, action, text, group, accel, command_handler) \
-    {command_id, action, text, text, group, {accel, NULL}, NULL, command_handler, 0}
+    {command_id, action, text, text, group, {accel, NULL}, lmme_command_enabled_for_handler_##command_handler, command_handler, 0}
 #define COMMAND_NO_ACCEL(command_id, action, text, group, command_handler) \
-    {command_id, action, text, text, group, {NULL}, NULL, command_handler, 0}
+    {command_id, action, text, text, group, {NULL}, lmme_command_enabled_for_handler_##command_handler, command_handler, 0}
 
 static const LmmeCommandDef command_defs[] = {
     COMMAND("file.open_workspace", "open", "Open Folder", LMME_COMMAND_CATEGORY_FILE, "<Ctrl>O", LMME_COMMAND_HANDLER_OPEN),
@@ -19,11 +20,13 @@ static const LmmeCommandDef command_defs[] = {
     COMMAND("view.toggle_preview", "toggle-preview", "Toggle Editable Preview", LMME_COMMAND_CATEGORY_VIEW, "<Ctrl>P", LMME_COMMAND_HANDLER_TOGGLE_PREVIEW),
     {"view.zoom_in", "zoom-in", "Zoom In", "Zoom In", LMME_COMMAND_CATEGORY_VIEW,
      {"<Ctrl>plus", "<Ctrl>equal", "<Ctrl><Shift>plus", "<Ctrl><Shift>equal", "<Ctrl>KP_Add", NULL},
-     NULL, LMME_COMMAND_HANDLER_ZOOM_IN, 0},
+     lmme_command_enabled_for_handler_LMME_COMMAND_HANDLER_ZOOM_IN, LMME_COMMAND_HANDLER_ZOOM_IN, 0},
     {"view.zoom_out", "zoom-out", "Zoom Out", "Zoom Out", LMME_COMMAND_CATEGORY_VIEW,
-     {"<Ctrl>minus", "<Ctrl>KP_Subtract", NULL}, NULL, LMME_COMMAND_HANDLER_ZOOM_OUT, 0},
+     {"<Ctrl>minus", "<Ctrl>KP_Subtract", NULL},
+     lmme_command_enabled_for_handler_LMME_COMMAND_HANDLER_ZOOM_OUT, LMME_COMMAND_HANDLER_ZOOM_OUT, 0},
     {"view.zoom_reset", "zoom-reset", "Reset Zoom", "Reset Zoom", LMME_COMMAND_CATEGORY_VIEW,
-     {"<Ctrl>0", "<Ctrl>KP_0", NULL}, NULL, LMME_COMMAND_HANDLER_ZOOM_RESET, 0},
+     {"<Ctrl>0", "<Ctrl>KP_0", NULL},
+     lmme_command_enabled_for_handler_LMME_COMMAND_HANDLER_ZOOM_RESET, LMME_COMMAND_HANDLER_ZOOM_RESET, 0},
     COMMAND("view.focus_mode", "focus-mode", "Focus Mode", LMME_COMMAND_CATEGORY_VIEW, "F11", LMME_COMMAND_HANDLER_FOCUS_MODE),
     COMMAND("buffer.close", "close-tab", "Close Tab", LMME_COMMAND_CATEGORY_BUFFER, "<Ctrl>W", LMME_COMMAND_HANDLER_CLOSE_TAB),
     COMMAND_NO_ACCEL("buffer.close_others", "close-other-tabs", "Close Other Tabs", LMME_COMMAND_CATEGORY_BUFFER, LMME_COMMAND_HANDLER_CLOSE_OTHER_TABS),

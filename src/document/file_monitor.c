@@ -2,6 +2,7 @@
 
 #include "app/app.h"
 #include "document/document.h"
+#include "command/command_actions.h"
 #include "document/document_autosave.h"
 #include "document/document.h"
 #include "document/file_io.h"
@@ -155,6 +156,7 @@ on_file_monitor_changed(GFileMonitor *monitor,
         doc->disk_state = LMME_DISK_STATE_EXTERNAL_DELETED;
         lmme_document_cancel_autosave(doc);
         lmme_window_update_status(doc->app);
+        lmme_command_actions_refresh(doc->app);
         note_external_conflict(doc);
         return;
     }
@@ -163,12 +165,14 @@ on_file_monitor_changed(GFileMonitor *monitor,
         if (!lmme_document_reload_from_disk(doc, &current, &error)) {
             lmme_window_set_status_error(doc->app, "Could not reload externally changed file");
         }
+        lmme_command_actions_refresh(doc->app);
         return;
     }
 
     doc->disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
     lmme_document_cancel_autosave(doc);
     lmme_window_update_status(doc->app);
+    lmme_command_actions_refresh(doc->app);
     note_external_conflict(doc);
 }
 

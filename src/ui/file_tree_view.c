@@ -2,6 +2,7 @@
 #include "ui/file_tree_view_test.h"
 
 #include "app/app.h"
+#include "command/command_actions.h"
 #include "document/tabs.h"
 #include "infra/dialogs.h"
 #include "ui/window.h"
@@ -335,9 +336,13 @@ sync_app_selection(LmmeFileTreeState *state)
 static void
 on_selection_changed(GObject *object, GParamSpec *pspec, gpointer user_data)
 {
+    LmmeFileTreeState *state = user_data;
     (void)object;
     (void)pspec;
-    sync_app_selection(user_data);
+    sync_app_selection(state);
+    if (state != NULL && state->app != NULL) {
+        lmme_command_actions_refresh(state->app);
+    }
 }
 
 static void

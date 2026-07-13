@@ -4,5 +4,6 @@
 typedef struct _LmmeApp LmmeApp;
 
 void lmme_command_actions_register(LmmeApp *app);
+void lmme_command_actions_refresh(LmmeApp *app);
 
 #endif
