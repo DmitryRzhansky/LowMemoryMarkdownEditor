@@ -1,4 +1,5 @@
 #include <glib.h>
+#include <gtksourceview/gtksource.h>
 #include <string.h>
 
 #include "editor/preview.h"
@@ -190,6 +191,393 @@ test_range_lower_bound(void)
     g_assert_cmpuint(lmme_preview_range_lower_bound(NULL, 10), ==, 0);
 }
 
+static guint
+count_ranges_of_kind(GPtrArray *ranges, LmmePreviewRangeKind kind)
+{
+    guint count = 0;
+
+    for (guint i = 0; i < ranges->len; i++) {
+        const LmmePreviewRange *range = g_ptr_array_index(ranges, i);
+        if (range->kind == kind) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static const LmmePreviewRange *
+find_first_range_of_kind(GPtrArray *ranges, LmmePreviewRangeKind kind)
+{
+    for (guint i = 0; i < ranges->len; i++) {
+        const LmmePreviewRange *range = g_ptr_array_index(ranges, i);
+        if (range->kind == kind) {
+            return range;
+        }
+    }
+
+    return NULL;
+}
+
+static guint
+count_body_rows(GPtrArray *ranges)
+{
+    return count_ranges_of_kind(ranges, LMME_PREVIEW_RANGE_TABLE_BODY_ROW);
+}
+
+static gboolean
+ranges_equal_ordered(GPtrArray *left, GPtrArray *right)
+{
+    if (left->len != right->len) {
+        return FALSE;
+    }
+
+    for (guint i = 0; i < left->len; i++) {
+        const LmmePreviewRange *a = g_ptr_array_index(left, i);
+        const LmmePreviewRange *b = g_ptr_array_index(right, i);
+
+        if (a->kind != b->kind || a->start_offset != b->start_offset || a->end_offset != b->end_offset) {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+static gboolean
+has_pipe_marker_at(GPtrArray *ranges, guint offset, LmmePreviewRangeKind marker_kind)
+{
+    for (guint i = 0; i < ranges->len; i++) {
+        const LmmePreviewRange *range = g_ptr_array_index(ranges, i);
+        if (range->kind == marker_kind &&
+            range->start_offset == offset &&
+            range->end_offset == offset + 1) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static void
+assert_basic_table_shape(GPtrArray *ranges, guint expected_body_rows)
+{
+    g_assert_cmpuint(count_ranges_of_kind(ranges, LMME_PREVIEW_RANGE_TABLE), ==, 1);
+    g_assert_cmpuint(count_ranges_of_kind(ranges, LMME_PREVIEW_RANGE_TABLE_HEADER_ROW), ==, 1);
+    g_assert_cmpuint(count_ranges_of_kind(ranges, LMME_PREVIEW_RANGE_TABLE_SEPARATOR_ROW), ==, 1);
+    g_assert_cmpuint(count_body_rows(ranges), ==, expected_body_rows);
+}
+
+static void
+test_table_leading_trailing_pipes(void)
+{
+    const char *input = "| Column 1 | Column 2 |\n|----------|----------|\n| Value 1  | Value 2  |\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+    const LmmePreviewRange *table = find_first_range_of_kind(ranges, LMME_PREVIEW_RANGE_TABLE);
+
+    assert_basic_table_shape(ranges, 1);
+    g_assert_cmpuint(table->start_offset, ==, 0);
+    g_assert_cmpuint(table->end_offset, ==, char_len(input) - 1U);
+    g_assert_true(has_pipe_marker_at(ranges, char_offset_of(input, "| Column"), LMME_PREVIEW_RANGE_HIDDEN_MARKER));
+}
+
+static void
+test_table_without_outer_pipes(void)
+{
+    const char *input = "Column 1 | Column 2\n---------|---------\nValue 1  | Value 2\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    assert_basic_table_shape(ranges, 1);
+}
+
+static void
+test_table_alignment_markers(void)
+{
+    const char *input = "| Left | Center | Right |\n|:-----|:------:|------:|\n| A    | B      | C     |\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    assert_basic_table_shape(ranges, 1);
+}
+
+static void
+test_table_empty_cells(void)
+{
+    const char *input_a = "| A || C |\n|---|---|---|\n| 1 || 3 |\n";
+    const char *input_b = "| A | |\n|---|---|\n";
+    g_autoptr(GPtrArray) ranges_a = lmme_preview_collect_ranges(input_a, TRUE, 99, TRUE);
+    g_autoptr(GPtrArray) ranges_b = lmme_preview_collect_ranges(input_b, TRUE, 99, TRUE);
+
+    assert_basic_table_shape(ranges_a, 1);
+    assert_basic_table_shape(ranges_b, 0);
+}
+
+static void
+test_table_multiple_body_rows(void)
+{
+    const char *input = "| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n| 5 | 6 |\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    assert_basic_table_shape(ranges, 3);
+}
+
+static void
+test_table_at_file_start(void)
+{
+    const char *input = "| A | B |\n|---|---|\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+    const LmmePreviewRange *table = find_first_range_of_kind(ranges, LMME_PREVIEW_RANGE_TABLE);
+
+    g_assert_nonnull(table);
+    g_assert_cmpuint(table->start_offset, ==, 0);
+}
+
+static void
+test_table_at_file_end(void)
+{
+    const char *input = "intro\n\n| A | B |\n|---|---|\n| 1 | 2 |";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+    const LmmePreviewRange *table = find_first_range_of_kind(ranges, LMME_PREVIEW_RANGE_TABLE);
+
+    g_assert_nonnull(table);
+    g_assert_cmpuint(table->end_offset, ==, char_len(input));
+}
+
+static void
+test_table_last_line_without_newline(void)
+{
+    const char *input = "| A | B |\n|---|---|\n| 1 | 2 |";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    assert_basic_table_shape(ranges, 1);
+}
+
+static void
+test_table_ordinary_pipe_line(void)
+{
+    const char *input = "This is ordinary text | with another fragment\nNext ordinary line\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    g_assert_false(has_kind(ranges, LMME_PREVIEW_RANGE_TABLE));
+}
+
+static void
+test_table_separator_too_few_dashes(void)
+{
+    const char *input = "A | B\n--|---\n1 | 2\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    g_assert_false(has_kind(ranges, LMME_PREVIEW_RANGE_TABLE));
+}
+
+static void
+test_table_header_separator_column_mismatch(void)
+{
+    const char *input = "A | B | C\n---|---\n1 | 2 | 3\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    g_assert_false(has_kind(ranges, LMME_PREVIEW_RANGE_TABLE));
+}
+
+static void
+test_table_body_column_mismatch_allowed(void)
+{
+    const char *input = "A | B | C\n|---|---|---|\n1 | 2\n3 | 4 | 5 | 6\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    assert_basic_table_shape(ranges, 2);
+}
+
+static void
+test_table_inside_fenced_code_block(void)
+{
+    const char *input =
+        "```markdown\n| A | B |\n|---|---|\n| 1 | 2 |\n```\n"
+        "~~~\n| X | Y |\n|---|---|\n| 9 | 8 |\n~~~\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    g_assert_false(has_kind(ranges, LMME_PREVIEW_RANGE_TABLE));
+    g_assert_true(has_kind(ranges, LMME_PREVIEW_RANGE_CODE_BLOCK));
+}
+
+static void
+test_table_cyrillic_offsets(void)
+{
+    const char *input = "| Имя | Статус |\n|-----|--------|\n| Модуль | Готов |\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    assert_basic_table_shape(ranges, 1);
+    g_assert_true(has_kind(ranges, LMME_PREVIEW_RANGE_TABLE_BODY_ROW));
+}
+
+static void
+test_table_emoji_offsets(void)
+{
+    const char *input = "| Item | State |\n|------|-------|\n| Parser 🧩 | Ready ✅ |\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    assert_basic_table_shape(ranges, 1);
+    g_assert_true(has_kind(ranges, LMME_PREVIEW_RANGE_TABLE_BODY_ROW));
+}
+
+static void
+test_table_escaped_pipe(void)
+{
+    const char *input = "| Name | Description |\n|------|-------------|\n| A | left \\| right |\n";
+    guint escaped = char_offset_of(input, "\\|");
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    assert_basic_table_shape(ranges, 1);
+    g_assert_false(has_pipe_marker_at(ranges, escaped, LMME_PREVIEW_RANGE_HIDDEN_MARKER));
+}
+
+static void
+test_table_inline_code_pipe(void)
+{
+    const char *input = "| Expression | Meaning |\n|------------|---------|\n| `a | b` | OR |\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    assert_basic_table_shape(ranges, 1);
+    g_assert_true(has_kind(ranges, LMME_PREVIEW_RANGE_INLINE_CODE));
+}
+
+static void
+test_table_two_tables(void)
+{
+    const char *input = "| A | B |\n|---|---|\n| 1 | 2 |\n\n| X | Y |\n|---|---|\n| 9 | 8 |\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    g_assert_cmpuint(count_ranges_of_kind(ranges, LMME_PREVIEW_RANGE_TABLE), ==, 2);
+}
+
+static void
+test_table_blank_line_rules(void)
+{
+    const char *invalid = "| A | B |\n\n|---|---|\n";
+    const char *valid = "| A | B |\n|---|---|\n| 1 | 2 |\n\nafter\n";
+    g_autoptr(GPtrArray) invalid_ranges = lmme_preview_collect_ranges(invalid, TRUE, 99, TRUE);
+    g_autoptr(GPtrArray) valid_ranges = lmme_preview_collect_ranges(valid, TRUE, 99, TRUE);
+    const LmmePreviewRange *table = find_first_range_of_kind(valid_ranges, LMME_PREVIEW_RANGE_TABLE);
+
+    g_assert_false(has_kind(invalid_ranges, LMME_PREVIEW_RANGE_TABLE));
+    g_assert_nonnull(table);
+    g_assert_cmpuint(table->end_offset, ==, char_offset_of(valid, "\n\nafter"));
+}
+
+static void
+test_table_incomplete_pair(void)
+{
+    const char *header_only = "| A | B |\n";
+    const char *separator_only = "|---|---|\n";
+    g_autoptr(GPtrArray) header_ranges = lmme_preview_collect_ranges(header_only, TRUE, 99, TRUE);
+    g_autoptr(GPtrArray) separator_ranges = lmme_preview_collect_ranges(separator_only, TRUE, 99, TRUE);
+
+    g_assert_false(has_kind(header_ranges, LMME_PREVIEW_RANGE_TABLE));
+    g_assert_false(has_kind(separator_ranges, LMME_PREVIEW_RANGE_TABLE));
+}
+
+static void
+test_table_repeatable_parser_pass(void)
+{
+    const char *input = "| A | B |\n|---|---|\n| 1 | 2 |\n";
+    g_autoptr(GPtrArray) first = lmme_preview_collect_ranges(input, TRUE, G_MAXUINT, TRUE);
+    g_autoptr(GPtrArray) second = lmme_preview_collect_ranges(input, TRUE, G_MAXUINT, TRUE);
+
+    g_assert_true(ranges_equal_ordered(first, second));
+}
+
+static void
+test_table_marker_reveal(void)
+{
+    const char *input = "| A | B |\n|---|---|\n| 1 | 2 |\n";
+    guint header_pipe = char_offset_of(input, "| A");
+    guint separator_line = char_offset_of(input, "|---");
+    g_autoptr(GPtrArray) inactive = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+    g_autoptr(GPtrArray) active_header = lmme_preview_collect_ranges(input, TRUE, 0, TRUE);
+    g_autoptr(GPtrArray) active_separator = lmme_preview_collect_ranges(input, TRUE, 1, TRUE);
+
+    g_assert_true(has_pipe_marker_at(inactive, header_pipe, LMME_PREVIEW_RANGE_HIDDEN_MARKER));
+    g_assert_true(has_pipe_marker_at(active_header, header_pipe, LMME_PREVIEW_RANGE_DIM_MARKER));
+    g_assert_true(has_range(inactive,
+                            LMME_PREVIEW_RANGE_HIDDEN_MARKER,
+                            separator_line,
+                            char_offset_of(input, "\n| 1")));
+    g_assert_true(has_range(active_separator,
+                            LMME_PREVIEW_RANGE_DIM_MARKER,
+                            separator_line,
+                            char_offset_of(input, "\n| 1")));
+}
+
+static void
+test_table_unclosed_backtick(void)
+{
+    const char *input = "| A `broken | B |\n|----------|---|\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    g_assert_false(has_kind(ranges, LMME_PREVIEW_RANGE_TABLE));
+}
+
+static void
+test_table_user_real_world_alignment(void)
+{
+    const char *input =
+        "| Поэт-футурист | Основное направление | Структура \"Хлебных крошек\" | Постоянный URL (ЧПУ) |\n"
+        "| :--- | :--- | :--- | :--- |\n"
+        "| Владимир Маяковский | Кубофутуризм | Главная > Энциклопедия > Маяковский | /encyclopedia/mayakovsky/ |\n";
+    g_autoptr(GPtrArray) ranges = lmme_preview_collect_ranges(input, TRUE, 99, TRUE);
+
+    assert_basic_table_shape(ranges, 1);
+}
+
+static void
+test_table_preview_api_lifecycle(void)
+{
+    const char *input = "| A | B |\n|---|---|\n| 1 | 2 |\n";
+    g_autoptr(GtkSourceBuffer) buffer = gtk_source_buffer_new(NULL);
+    GtkTextTagTable *table = NULL;
+    GtkTextTag *first_tag = NULL;
+    GtkTextTag *second_tag = NULL;
+    g_autofree char *before = NULL;
+    g_autofree char *after = NULL;
+    GtkTextIter start;
+    GtkTextIter end;
+
+    gtk_text_buffer_set_text(GTK_TEXT_BUFFER(buffer), input, -1);
+    before = g_strdup(input);
+
+    g_assert_cmpint(lmme_preview_apply_editable_preview(GTK_TEXT_BUFFER(buffer), TRUE, TRUE),
+                    ==,
+                    LMME_PREVIEW_APPLY_OK);
+
+    gtk_text_buffer_get_bounds(GTK_TEXT_BUFFER(buffer), &start, &end);
+    after = gtk_text_buffer_get_text(GTK_TEXT_BUFFER(buffer), &start, &end, TRUE);
+    g_assert_cmpstr(after, ==, before);
+
+    table = gtk_text_buffer_get_tag_table(GTK_TEXT_BUFFER(buffer));
+    first_tag = gtk_text_tag_table_lookup(table, "lmme-preview-table-header-row");
+    g_assert_nonnull(first_tag);
+
+    g_assert_cmpint(lmme_preview_apply_editable_preview(GTK_TEXT_BUFFER(buffer), TRUE, TRUE),
+                    ==,
+                    LMME_PREVIEW_APPLY_OK);
+    second_tag = gtk_text_tag_table_lookup(table, "lmme-preview-table-header-row");
+    g_assert_true(first_tag == second_tag);
+
+    lmme_preview_clear_editable_preview(GTK_TEXT_BUFFER(buffer));
+    {
+        GtkTextTag *body_tag = gtk_text_tag_table_lookup(table, "lmme-preview-table-body-row");
+        GtkTextIter body_iter;
+
+        g_assert_nonnull(body_tag);
+        gtk_text_buffer_get_iter_at_line(GTK_TEXT_BUFFER(buffer), &body_iter, 2);
+        g_assert_false(gtk_text_iter_has_tag(&body_iter, body_tag));
+    }
+
+    gtk_text_buffer_get_bounds(GTK_TEXT_BUFFER(buffer), &start, &end);
+    g_free(after);
+    after = gtk_text_buffer_get_text(GTK_TEXT_BUFFER(buffer), &start, &end, TRUE);
+    g_assert_cmpstr(after, ==, before);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -205,5 +593,30 @@ main(int argc, char **argv)
     g_test_add_func("/preview-style/cyrillic-offsets", test_cyrillic_offsets);
     g_test_add_func("/preview-style/sorted-bounded", test_ranges_are_sorted_and_bounded);
     g_test_add_func("/preview-style/lower-bound", test_range_lower_bound);
+    g_test_add_func("/preview-style/table/leading-trailing-pipes", test_table_leading_trailing_pipes);
+    g_test_add_func("/preview-style/table/without-outer-pipes", test_table_without_outer_pipes);
+    g_test_add_func("/preview-style/table/alignment-markers", test_table_alignment_markers);
+    g_test_add_func("/preview-style/table/empty-cells", test_table_empty_cells);
+    g_test_add_func("/preview-style/table/multiple-body-rows", test_table_multiple_body_rows);
+    g_test_add_func("/preview-style/table/at-file-start", test_table_at_file_start);
+    g_test_add_func("/preview-style/table/at-file-end", test_table_at_file_end);
+    g_test_add_func("/preview-style/table/last-line-without-newline", test_table_last_line_without_newline);
+    g_test_add_func("/preview-style/table/ordinary-pipe-line", test_table_ordinary_pipe_line);
+    g_test_add_func("/preview-style/table/separator-too-few-dashes", test_table_separator_too_few_dashes);
+    g_test_add_func("/preview-style/table/header-separator-mismatch", test_table_header_separator_column_mismatch);
+    g_test_add_func("/preview-style/table/body-column-mismatch", test_table_body_column_mismatch_allowed);
+    g_test_add_func("/preview-style/table/fenced-code-block", test_table_inside_fenced_code_block);
+    g_test_add_func("/preview-style/table/cyrillic-offsets", test_table_cyrillic_offsets);
+    g_test_add_func("/preview-style/table/emoji-offsets", test_table_emoji_offsets);
+    g_test_add_func("/preview-style/table/escaped-pipe", test_table_escaped_pipe);
+    g_test_add_func("/preview-style/table/inline-code-pipe", test_table_inline_code_pipe);
+    g_test_add_func("/preview-style/table/two-tables", test_table_two_tables);
+    g_test_add_func("/preview-style/table/blank-line-rules", test_table_blank_line_rules);
+    g_test_add_func("/preview-style/table/incomplete-pair", test_table_incomplete_pair);
+    g_test_add_func("/preview-style/table/repeatable-parser-pass", test_table_repeatable_parser_pass);
+    g_test_add_func("/preview-style/table/marker-reveal", test_table_marker_reveal);
+    g_test_add_func("/preview-style/table/unclosed-backtick", test_table_unclosed_backtick);
+    g_test_add_func("/preview-style/table/user-real-world", test_table_user_real_world_alignment);
+    g_test_add_func("/preview-style/table/preview-api-lifecycle", test_table_preview_api_lifecycle);
     return g_test_run();
 }
