@@ -241,6 +241,24 @@ window.dialog entry:focus {
   color: #ffffff;
 }
 
+.editor-scroller {
+  background-color: #1e2023;
+  border: 0;
+}
+
+.editor-scroller scrollbar,
+.editor-scroller scrollbar slider {
+  background-color: transparent;
+  border: 0;
+}
+
+.editor-scroller scrollbar slider {
+  min-width: 8px;
+  min-height: 24px;
+  background-color: #50555e;
+  border-radius: 4px;
+}
+
 .searchbar {
   background-color: #292c31;
   color: #dfe3e8;

@@ -12,6 +12,7 @@
 #include "document/recovery_test.h"
 #include "document/tabs.h"
 #include "document/tabs_test.h"
+#include "editor/editor.h"
 #include "editor/preview.h"
 #include "infra/safe_write_test.h"
 #include "ui/external_conflict.h"
@@ -1077,6 +1078,47 @@ test_statusbar_shows_dash_when_word_count_invalid(void)
     g_free(doc.relative_path);
 }
 
+static void
+test_editor_native_dark_styling(void)
+{
+    LmmeConfig config = {
+        .line_numbers = TRUE,
+        .word_wrap = TRUE,
+    };
+    GtkSourceStyleSchemeManager *manager = NULL;
+    GtkSourceStyleScheme *expected = NULL;
+    GtkSourceStyleScheme *actual = NULL;
+    g_autoptr(GtkSourceBuffer) default_buffer = NULL;
+    GtkSourceBuffer *buffer = NULL;
+    GtkWidget *view = NULL;
+
+    gtk_init();
+    manager = gtk_source_style_scheme_manager_get_default();
+    expected = gtk_source_style_scheme_manager_get_scheme(manager, "Adwaita-dark");
+    if (expected == NULL) {
+        expected = gtk_source_style_scheme_manager_get_scheme(manager, "oblivion");
+    }
+
+    default_buffer = gtk_source_buffer_new(NULL);
+    view = lmme_editor_create_view(&buffer, &config);
+    actual = gtk_source_buffer_get_style_scheme(buffer);
+
+    if (expected != NULL) {
+        g_assert_true(actual == expected);
+    } else {
+        g_assert_true(actual == gtk_source_buffer_get_style_scheme(default_buffer));
+    }
+    g_assert_cmpint(gtk_text_view_get_left_margin(GTK_TEXT_VIEW(view)), ==, 12);
+    g_assert_cmpint(gtk_text_view_get_right_margin(GTK_TEXT_VIEW(view)), ==, 12);
+    g_assert_cmpint(gtk_text_view_get_top_margin(GTK_TEXT_VIEW(view)), ==, 8);
+    g_assert_cmpint(gtk_text_view_get_bottom_margin(GTK_TEXT_VIEW(view)), ==, 8);
+    g_assert_false(gtk_source_view_get_highlight_current_line(GTK_SOURCE_VIEW(view)));
+
+    g_object_ref_sink(view);
+    g_object_unref(view);
+    g_object_unref(buffer);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1124,5 +1166,7 @@ main(int argc, char **argv)
                     test_inactive_document_does_not_schedule_word_count);
     g_test_add_func("/document/word-count/invalid-status",
                     test_statusbar_shows_dash_when_word_count_invalid);
+    g_test_add_func("/document/editor/native-dark-styling",
+                    test_editor_native_dark_styling);
     return g_test_run();
 }

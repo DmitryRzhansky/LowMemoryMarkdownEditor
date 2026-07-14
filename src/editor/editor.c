@@ -5,6 +5,26 @@
 static GtkCssProvider *editor_font_provider = NULL;
 static gboolean editor_font_provider_added = FALSE;
 
+static GtkSourceStyleScheme *
+find_dark_style_scheme(void)
+{
+    static const char *const preferred_scheme_ids[] = {
+        "Adwaita-dark",
+        "oblivion",
+    };
+    GtkSourceStyleSchemeManager *manager = gtk_source_style_scheme_manager_get_default();
+
+    for (guint i = 0; i < G_N_ELEMENTS(preferred_scheme_ids); i++) {
+        GtkSourceStyleScheme *scheme =
+            gtk_source_style_scheme_manager_get_scheme(manager, preferred_scheme_ids[i]);
+
+        if (scheme != NULL) {
+            return scheme;
+        }
+    }
+    return NULL;
+}
+
 static int
 clamp_int(int value, int min, int max)
 {
@@ -86,15 +106,20 @@ lmme_editor_create_view(GtkSourceBuffer **out_buffer, const LmmeConfig *config)
     GtkSourceLanguage *language = gtk_source_language_manager_get_language(manager, "markdown");
     GtkSourceBuffer *buffer = language != NULL ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(NULL);
     GtkWidget *view = gtk_source_view_new_with_buffer(buffer);
+    GtkSourceStyleScheme *scheme = find_dark_style_scheme();
 
     gtk_widget_add_css_class(view, "editor-view");
 
+    if (scheme != NULL) {
+        gtk_source_buffer_set_style_scheme(buffer, scheme);
+    }
+
     gtk_source_view_set_show_line_numbers(GTK_SOURCE_VIEW(view), config->line_numbers);
     gtk_source_view_set_tab_width(GTK_SOURCE_VIEW(view), 4);
-    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(view), 14);
-    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(view), 14);
-    gtk_text_view_set_top_margin(GTK_TEXT_VIEW(view), 10);
-    gtk_text_view_set_bottom_margin(GTK_TEXT_VIEW(view), 10);
+    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(view), 12);
+    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(view), 12);
+    gtk_text_view_set_top_margin(GTK_TEXT_VIEW(view), 8);
+    gtk_text_view_set_bottom_margin(GTK_TEXT_VIEW(view), 8);
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(view), config->word_wrap ? GTK_WRAP_WORD_CHAR : GTK_WRAP_NONE);
     gtk_widget_set_hexpand(view, TRUE);
     gtk_widget_set_vexpand(view, TRUE);

@@ -172,6 +172,7 @@ lmme_document_new(LmmeApp *app, const char *path, const char *contents, const ch
     doc->source_view = lmme_editor_create_view(&doc->buffer, &app->config);
     lmme_editor_setup_zoom_keys(doc->source_view, G_ACTION_GROUP(app->gtk_app));
     doc->scroller = gtk_scrolled_window_new();
+    gtk_widget_add_css_class(doc->scroller, "editor-scroller");
     doc->save_state = LMME_SAVE_STATE_SAVED;
     doc->disk_state = LMME_DISK_STATE_NORMAL;
     doc->preview_dirty = TRUE;
