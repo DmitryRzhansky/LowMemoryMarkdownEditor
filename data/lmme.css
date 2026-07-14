@@ -1,64 +1,369 @@
-*{outline-width:0;box-shadow:none;}
-window{background-color:#c0c6cb;color:#1f2428;}
-box,paned,notebook,popovermenubar{background-color:#c0c6cb;color:#1f2428;}
-dialog,dialog box,window.dialog{background-color:#c0c6cb;color:#1f2428;}
-dialog label,window.dialog label{background-color:transparent;color:#1f2428;}
+.lmme-window,
+.app-root,
+.content-area {
+  background-color: #202226;
+  color: #e4e7eb;
+}
 
-popovermenubar{padding:1px 4px;}
-popovermenubar button,popovermenubar menubutton>button{background-color:transparent;border:0;border-radius:0;padding:2px 6px;}
-popovermenubar button:hover,popovermenubar menubutton>button:hover{background-color:#b8c0c7;border:0;}
-popover,popover contents{background-color:#d3d7db;color:#1f2428;border:1px solid #9ea8b0;border-radius:0;}
-popover contents{padding:0;}
-popover box{background-color:transparent;color:#1f2428;}
-popover modelbutton{background-color:transparent;color:#1f2428;border:0;border-radius:0;margin:0;padding:4px 10px;min-height:22px;}
-popover modelbutton:hover{background-color:#c2cbd2;color:#111820;}
-popover modelbutton:active,popover modelbutton:checked{background-color:#b7c2ca;color:#111820;}
-popover modelbutton label,popover modelbutton:hover label,popover modelbutton:active label,popover modelbutton:checked label{background-color:transparent;color:inherit;}
-popover.menu{padding:0;}
-popover.menu scrolledwindow,popover.menu scrolledwindow>viewport,popover.menu stack{border:0;margin:0;padding:0;min-height:0;background-color:transparent;}
-popover.menu scrolledwindow scrollbar.vertical,popover.menu scrolledwindow scrollbar.horizontal{min-width:0;min-height:0;opacity:0;border:0;}
-popover.menu box{margin:0;padding:0;background-color:transparent;}
-popover.menu modelbutton.flat{margin:0;padding:4px 10px;min-height:22px;border:0;border-radius:0;background-color:transparent;color:#1f2428;box-shadow:none;}
-popover.menu modelbutton.flat:hover{background-color:#c2cbd2;color:#111820;}
-popover.menu modelbutton.flat:active,popover.menu modelbutton.flat:checked{background-color:#b7c2ca;color:#111820;}
-popover.menu modelbutton.flat label,popover.menu modelbutton.flat:hover label,popover.menu modelbutton.flat:active label,popover.menu modelbutton.flat:checked label{background-color:transparent;color:inherit;}
+.app-menu {
+  background-color: #25282d;
+  color: #e4e7eb;
+  border-bottom: 1px solid #363a41;
+  padding: 1px 4px;
+}
 
-tooltip{padding:4px 8px;border:0;border-radius:3px;box-shadow:none;}
-tooltip.background{background-color:#d3d7db;color:#1f2428;border:1px solid #9ea8b0;border-radius:3px;box-shadow:none;}
-tooltip decoration{background-color:transparent;}
-tooltip box,tooltip label,tooltip *{background-color:transparent;color:#1f2428;}
+.app-menu menubutton > button {
+  min-height: 24px;
+  padding: 2px 7px;
+  background-color: transparent;
+  color: #dfe3e8;
+  border: 0;
+  border-radius: 4px;
+}
 
-scrolledwindow{background-color:#d3d7db;border:0;}
-textview,sourceview,textview text,sourceview text,.editor-view,.editor-view text{background-color:#d6dadd;color:#202428;}
-.editor-view.preview-edit-mode,.editor-view.preview-edit-mode text{background-color:#d6dadd;color:#202428;}
-sourceview gutter,sourceview gutter cell,sourceview gutter>*,sourceview border,sourceview>border,sourceview gutterrenderer,.editor-view gutter,.editor-view gutter cell,.editor-view border,.editor-view>border{background-color:#c7cdd2;color:#66717a;border:0;}
+.app-menu menubutton > button:hover {
+  background-color: #343840;
+}
 
-treeview{background-color:#b7bec5;color:#22282d;border:0;}
-treeview:selected{background-color:#8fa9bd;color:#101820;}
-button{background-color:#cbd1d6;color:#202428;border:1px solid #a9b2ba;border-radius:5px;padding:5px 9px;}
-button:hover{background-color:#d5dade;border-color:#98a3ac;}
-button:active{background-color:#bfc7ce;}
-entry{background-color:#d8dcdf;color:#202428;border:1px solid #a9b2ba;border-radius:5px;padding:5px 7px;}
+.app-menu menubutton > button:checked,
+.app-menu menubutton > button:active {
+  background-color: #3c414a;
+  color: #ffffff;
+}
 
-notebook{background-color:#d3d7db;border:0;}
-notebook stack,notebook>stack,stack{background-color:#d3d7db;}
-notebook>header{background-color:#c0c6cb;border:0;padding:1px 4px 0 24px;min-height:0;}
-notebook tab,notebook tab:hover,notebook tab:checked,notebook tab:checked:hover{background-color:#cbd1d6;color:#283038;border:1px solid #aeb7bf;border-bottom:0;border-radius:4px 4px 0 0;padding:0;margin-right:2px;min-height:0;}
-notebook tab box,notebook tab label{background-color:transparent;margin:0;padding:0;}
-notebook tab .tab-label{background-color:#cbd1d6;border-radius:4px 4px 0 0;padding:2px 6px;min-height:0;}
-notebook tab:checked{background-color:#d6dadd;color:#111820;}
-notebook tab:checked box,notebook tab:checked label,notebook tab:checked .tab-label{background-color:#d6dadd;border-radius:4px 4px 0 0;}
-notebook tab button,notebook tab button.tab-close{background-color:transparent;border:0;border-radius:3px;margin:0 0 0 3px;min-height:16px;min-width:16px;padding:0 2px;}
-notebook tab:checked button{background-color:transparent;border:0;}
-notebook tab button:hover{background-color:#b8c2ca;border:0;}
-notebook tab:checked button:hover{background-color:#bdc6ce;border:0;}
+.toolbar {
+  background-color: #292c31;
+  color: #dfe3e8;
+  border-bottom: 1px solid #3a3e45;
+  padding: 3px 6px;
+}
 
-paned>separator{background-color:#9ea8b0;min-width:1px;min-height:1px;}
-.toolbar{background-color:#b8c0c7;border-bottom:1px solid #9ea8b0;padding:4px 6px;}
-.toolbar button{padding:2px 8px;min-height:0;min-width:0;}
-.toolbar-icon-button{min-width:30px;min-height:30px;padding:4px;}
-.sidebar{background-color:#b7bec5;border-right:1px solid #9ea8b0;}
-.statusbar{background-color:#b8c0c7;border-top:1px solid #9ea8b0;color:#273038;padding:5px 8px;}
-.searchbar{background-color:#c0c6cb;border-top:1px solid #9ea8b0;padding:3px 6px;}
-.searchbar button{padding:2px 8px;min-height:0;min-width:0;}
-.searchbar entry{padding:2px 6px;min-height:0;}
+.toolbar button,
+.searchbar button {
+  min-width: 0;
+  min-height: 0;
+  padding: 3px 8px;
+  background-color: #30343a;
+  color: #dfe3e8;
+  border: 1px solid #454a53;
+  border-radius: 4px;
+}
+
+.toolbar button:hover,
+.searchbar button:hover {
+  background-color: #3a3f47;
+  border-color: #555c67;
+  color: #ffffff;
+}
+
+.toolbar button:active,
+.searchbar button:active {
+  background-color: #24272c;
+}
+
+.toolbar button:disabled,
+.searchbar button:disabled {
+  background-color: #292c31;
+  color: #777d86;
+  border-color: #363a41;
+}
+
+.toolbar button:focus,
+.searchbar button:focus,
+.searchbar entry:focus,
+.editor-tabs .tab-close:focus,
+.app-menu menubutton > button:focus,
+popover.menu modelbutton:focus,
+window.dialog button:focus,
+window.dialog entry:focus {
+  outline: 2px solid #8ba7c4;
+  outline-offset: -2px;
+}
+
+.toolbar-icon-button {
+  min-width: 30px;
+  min-height: 30px;
+  padding: 4px;
+}
+
+.sidebar,
+.sidebar > viewport,
+.file-tree {
+  background-color: #24272b;
+  color: #d9dde2;
+  border: 0;
+}
+
+.sidebar {
+  border-right: 0;
+}
+
+.main-paned > separator {
+  min-width: 1px;
+  min-height: 1px;
+  background-color: #444951;
+}
+
+.file-tree row {
+  min-height: 26px;
+  padding: 0 5px;
+  background-color: transparent;
+  color: #cfd4da;
+  border-radius: 3px;
+}
+
+.file-tree row:hover {
+  background-color: #2e3238;
+  color: #f0f2f5;
+}
+
+.file-tree row:selected {
+  background-color: #3c4b5a;
+  color: #ffffff;
+}
+
+.file-tree row:selected:hover {
+  background-color: #455667;
+}
+
+.file-tree row:focus {
+  outline: 2px solid #8ba7c4;
+  outline-offset: -2px;
+}
+
+.file-tree-row-content,
+.file-tree treeexpander,
+.file-tree treeexpander > expander {
+  background-color: transparent;
+  color: inherit;
+}
+
+.file-tree-icon {
+  color: #aab3bd;
+}
+
+.file-tree row:selected .file-tree-icon {
+  color: #e8edf2;
+}
+
+.file-tree-label {
+  color: inherit;
+}
+
+.sidebar scrollbar,
+.sidebar scrollbar slider {
+  background-color: transparent;
+  border: 0;
+}
+
+.sidebar scrollbar slider {
+  min-width: 8px;
+  min-height: 24px;
+  background-color: #50555e;
+  border-radius: 4px;
+}
+
+.breadcrumbs {
+  min-height: 26px;
+  margin: 0;
+  padding: 0 4px;
+  background-color: #25282d;
+  color: #aeb5be;
+  border-bottom: 1px solid #363a41;
+}
+
+.editor-tabs {
+  background-color: #202226;
+  border: 0;
+}
+
+.editor-tabs > stack {
+  background-color: #202226;
+}
+
+.editor-tabs > header {
+  padding: 2px 4px 0 20px;
+  background-color: #25282d;
+  border: 0;
+  border-bottom: 1px solid #3a3e45;
+}
+
+.editor-tabs > header tab {
+  margin: 0 2px 0 0;
+  padding: 0;
+  background-color: #2b2e34;
+  color: #aeb5be;
+  border: 1px solid #3d424a;
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+}
+
+.editor-tabs > header tab:hover {
+  background-color: #33373e;
+  color: #e4e7eb;
+}
+
+.editor-tabs > header tab:checked {
+  background-color: #202226;
+  color: #ffffff;
+  border-color: #4b515b;
+}
+
+.editor-tabs > header tab:focus {
+  outline: 2px solid #8ba7c4;
+  outline-offset: -2px;
+}
+
+.editor-tabs .tab-label {
+  padding: 3px 6px;
+  background-color: transparent;
+  color: inherit;
+}
+
+.editor-tabs .tab-title {
+  background-color: transparent;
+  color: inherit;
+}
+
+.editor-tabs .tab-close {
+  min-width: 16px;
+  min-height: 16px;
+  margin: 0 0 0 3px;
+  padding: 0 2px;
+  background-color: transparent;
+  color: #9ea5ae;
+  border: 0;
+  border-radius: 3px;
+}
+
+.editor-tabs .tab-close:hover {
+  background-color: #454a53;
+  color: #ffffff;
+}
+
+.searchbar {
+  background-color: #292c31;
+  color: #dfe3e8;
+  border-top: 1px solid #3a3e45;
+  padding: 4px 6px;
+}
+
+.searchbar entry,
+window.dialog entry {
+  min-height: 0;
+  padding: 4px 7px;
+  background-color: #1d1f23;
+  color: #edf0f3;
+  border: 1px solid #4a5059;
+  border-radius: 4px;
+  caret-color: #ffffff;
+}
+
+.searchbar entry selection,
+window.dialog entry selection {
+  background-color: #526d87;
+  color: #ffffff;
+}
+
+.statusbar {
+  background-color: #292c31;
+  color: #b9c0c8;
+  border-top: 1px solid #3a3e45;
+  padding: 5px 8px;
+}
+
+popover.menu > contents {
+  padding: 3px;
+  background-color: #2b2e33;
+  color: #e2e5e9;
+  border: 1px solid #4a4f58;
+  border-radius: 5px;
+}
+
+popover.menu modelbutton {
+  min-height: 24px;
+  margin: 0;
+  padding: 4px 10px;
+  background-color: transparent;
+  color: #dfe3e8;
+  border: 0;
+  border-radius: 3px;
+}
+
+popover.menu modelbutton:hover,
+popover.menu modelbutton:focus {
+  background-color: #3a3f47;
+  color: #ffffff;
+}
+
+popover.menu modelbutton:active,
+popover.menu modelbutton:checked {
+  background-color: #46505b;
+  color: #ffffff;
+}
+
+popover.menu modelbutton:disabled {
+  color: #777d86;
+}
+
+popover.menu separator {
+  min-height: 1px;
+  margin: 3px 6px;
+  background-color: #454a52;
+}
+
+popover.menu scrolledwindow,
+popover.menu scrolledwindow > viewport,
+popover.menu stack {
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  background-color: transparent;
+  border: 0;
+}
+
+window.dialog,
+window.dialog box {
+  background-color: #282b30;
+  color: #e3e6ea;
+}
+
+window.dialog label {
+  background-color: transparent;
+  color: #e3e6ea;
+}
+
+window.dialog button {
+  padding: 5px 9px;
+  background-color: #34383f;
+  color: #e5e8ec;
+  border: 1px solid #4c525c;
+  border-radius: 4px;
+}
+
+window.dialog button:hover {
+  background-color: #40454e;
+  border-color: #5a626e;
+}
+
+window.dialog button:active {
+  background-color: #272a2f;
+}
+
+window.dialog button:disabled {
+  color: #777d86;
+  border-color: #393d44;
+}
+
+tooltip.background {
+  padding: 4px 8px;
+  background-color: #30343a;
+  color: #f0f2f4;
+  border: 1px solid #555b65;
+  border-radius: 4px;
+}
+
+tooltip.background label {
+  background-color: transparent;
+  color: #f0f2f4;
+}
