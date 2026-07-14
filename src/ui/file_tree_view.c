@@ -265,6 +265,9 @@ factory_setup(GtkSignalListItemFactory *factory, GtkListItem *list_item, gpointe
     (void)factory;
     (void)user_data;
 
+    gtk_widget_add_css_class(row, "file-tree-row-content");
+    gtk_widget_add_css_class(icon, "file-tree-icon");
+    gtk_widget_add_css_class(label, "file-tree-label");
     gtk_widget_set_size_request(leading, 8, -1);
     gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
     gtk_widget_set_hexpand(label, TRUE);
@@ -375,6 +378,7 @@ lmme_file_tree_create(LmmeApp *app)
     GtkListItemFactory *factory = GTK_LIST_ITEM_FACTORY(gtk_signal_list_item_factory_new());
     GtkWidget *view = gtk_list_view_new(NULL, factory);
 
+    gtk_widget_add_css_class(view, "file-tree");
     gtk_list_view_set_single_click_activate(GTK_LIST_VIEW(view), TRUE);
     g_signal_connect(factory, "setup", G_CALLBACK(factory_setup), NULL);
     g_signal_connect(factory, "bind", G_CALLBACK(factory_bind), NULL);

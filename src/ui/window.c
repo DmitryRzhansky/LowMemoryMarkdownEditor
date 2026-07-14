@@ -171,6 +171,7 @@ lmme_window_build(LmmeApp *app)
     lmme_command_actions_register(app);
 
     app->window = gtk_application_window_new(app->gtk_app);
+    gtk_widget_add_css_class(app->window, "lmme-window");
     g_signal_connect(app->window, "close-request", G_CALLBACK(on_window_close_request), app);
     g_signal_connect(app->window, "destroy", G_CALLBACK(on_window_destroy), app);
     gtk_window_set_title(GTK_WINDOW(app->window), "LowMemoryMarkdownEditor");
@@ -180,15 +181,18 @@ lmme_window_build(LmmeApp *app)
     }
 
     app->root_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_add_css_class(app->root_box, "app-root");
     gtk_window_set_child(GTK_WINDOW(app->window), app->root_box);
     menu_model = lmme_menu_create_model();
     app->menu_bar = gtk_popover_menu_bar_new_from_model(menu_model);
+    gtk_widget_add_css_class(app->menu_bar, "app-menu");
     g_object_unref(menu_model);
     gtk_box_append(GTK_BOX(app->root_box), app->menu_bar);
     app->toolbar = lmme_toolbar_create();
     gtk_box_append(GTK_BOX(app->root_box), app->toolbar);
 
     app->main_paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_widget_add_css_class(app->main_paned, "main-paned");
     gtk_widget_set_vexpand(app->main_paned, TRUE);
     gtk_paned_set_shrink_start_child(GTK_PANED(app->main_paned), FALSE);
     gtk_box_append(GTK_BOX(app->root_box), app->main_paned);
@@ -201,14 +205,19 @@ lmme_window_build(LmmeApp *app)
     gtk_paned_set_start_child(GTK_PANED(app->main_paned), app->sidebar);
 
     app->right_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_add_css_class(app->right_box, "content-area");
     gtk_paned_set_end_child(GTK_PANED(app->main_paned), app->right_box);
     app->breadcrumbs_label = gtk_label_new("No workspace opened");
+    gtk_widget_add_css_class(app->breadcrumbs_label, "breadcrumbs");
     gtk_label_set_xalign(GTK_LABEL(app->breadcrumbs_label), 0.0f);
+    gtk_label_set_single_line_mode(GTK_LABEL(app->breadcrumbs_label), TRUE);
+    gtk_label_set_ellipsize(GTK_LABEL(app->breadcrumbs_label), PANGO_ELLIPSIZE_MIDDLE);
     gtk_widget_set_margin_start(app->breadcrumbs_label, 8);
     gtk_widget_set_margin_top(app->breadcrumbs_label, 4);
     gtk_widget_set_margin_bottom(app->breadcrumbs_label, 4);
     gtk_box_append(GTK_BOX(app->right_box), app->breadcrumbs_label);
     app->notebook = gtk_notebook_new();
+    gtk_widget_add_css_class(app->notebook, "editor-tabs");
     gtk_notebook_set_scrollable(GTK_NOTEBOOK(app->notebook), TRUE);
     gtk_widget_set_hexpand(app->notebook, TRUE);
     gtk_widget_set_vexpand(app->notebook, TRUE);

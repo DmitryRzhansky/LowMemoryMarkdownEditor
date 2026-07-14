@@ -40,6 +40,7 @@ create_tab_label(LmmeDocument *doc)
     GtkWidget *close = gtk_button_new_from_icon_name("window-close-symbolic");
 
     gtk_widget_add_css_class(box, "tab-label");
+    gtk_widget_add_css_class(label, "tab-title");
     gtk_widget_add_css_class(close, "tab-close");
     gtk_button_set_has_frame(GTK_BUTTON(close), FALSE);
     gtk_widget_set_size_request(close, 18, 18);

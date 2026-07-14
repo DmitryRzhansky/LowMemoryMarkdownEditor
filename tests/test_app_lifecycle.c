@@ -244,6 +244,39 @@ test_teardown_window_before_app_state(void)
 }
 
 static void
+test_window_semantic_styling_hooks(void)
+{
+    GtkApplication *gtk_app = NULL;
+    g_autofree char *root = NULL;
+    g_autofree char *note_path = NULL;
+    LmmeApp *app = test_app_with_window(&gtk_app, &root);
+    LmmeDocument *doc = NULL;
+
+    g_assert_true(gtk_widget_has_css_class(app->window, "lmme-window"));
+    g_assert_true(gtk_widget_has_css_class(app->root_box, "app-root"));
+    g_assert_true(gtk_widget_has_css_class(app->menu_bar, "app-menu"));
+    g_assert_true(gtk_widget_has_css_class(app->main_paned, "main-paned"));
+    g_assert_true(gtk_widget_has_css_class(app->tree_view, "file-tree"));
+    g_assert_true(gtk_widget_has_css_class(app->right_box, "content-area"));
+    g_assert_true(gtk_widget_has_css_class(app->breadcrumbs_label, "breadcrumbs"));
+    g_assert_true(gtk_widget_has_css_class(app->notebook, "editor-tabs"));
+    g_assert_true(gtk_label_get_single_line_mode(GTK_LABEL(app->breadcrumbs_label)));
+    g_assert_cmpint(gtk_label_get_ellipsize(GTK_LABEL(app->breadcrumbs_label)),
+                    ==,
+                    PANGO_ELLIPSIZE_MIDDLE);
+
+    note_path = g_build_filename(root, "semantic-hooks.md", NULL);
+    g_assert_true(g_file_set_contents(note_path, "# Semantic hooks\n", -1, NULL));
+    g_assert_true(lmme_tabs_open_file(app, note_path, NULL));
+    doc = lmme_tabs_get_active(app);
+    g_assert_nonnull(doc);
+    g_assert_true(gtk_widget_has_css_class(doc->tab_box, "tab-label"));
+    g_assert_true(gtk_widget_has_css_class(doc->title_label, "tab-title"));
+
+    test_full_app_teardown(app, gtk_app);
+}
+
+static void
 test_teardown_cancels_pending_sources(void)
 {
     GtkApplication *gtk_app = NULL;
@@ -524,6 +557,7 @@ main(int argc, char **argv)
                     test_command_refresh_dispatch_clears_source);
     g_test_add_func("/app/command-refresh/per-app-state", test_command_refresh_per_app_state);
     g_test_add_func("/app/teardown/window-before-app-state", test_teardown_window_before_app_state);
+    g_test_add_func("/app/window/semantic-styling-hooks", test_window_semantic_styling_hooks);
     g_test_add_func("/app/teardown/cancels-pending-sources", test_teardown_cancels_pending_sources);
     g_test_add_func("/app/teardown/repeated", test_teardown_repeated);
     g_test_add_func("/app/teardown/shutdown-prepare-cancelled",
