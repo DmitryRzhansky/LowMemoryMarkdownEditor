@@ -1,6 +1,8 @@
 # LowMemoryMarkdownEditor
 
-<img src="image.png" alt="LMME logo" width="320">
+<p align="center">
+  <img src="image.png" alt="LMME logo" width="320">
+</p>
 
 Small Linux-only GTK Markdown editor focused on low memory usage and local folders.
 
