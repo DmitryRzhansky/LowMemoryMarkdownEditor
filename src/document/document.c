@@ -117,8 +117,25 @@ lmme_document_refresh_title(LmmeDocument *doc)
     }
 
     g_autofree char *base = g_path_get_basename(doc->path);
-    g_autofree char *title = doc->modified ? g_strdup_printf("● %s", base) : g_strdup(base);
-    gtk_label_set_text(GTK_LABEL(doc->title_label), title);
+    gboolean was_modified = doc->tab_box != NULL &&
+                            gtk_widget_has_css_class(doc->tab_box, "modified");
+
+    gtk_label_set_text(GTK_LABEL(doc->title_label), base);
+    if (doc->modified) {
+        g_autofree char *accessible_title = g_strdup_printf("%s, modified", base);
+
+        if (doc->tab_box != NULL && !was_modified) {
+            gtk_widget_add_css_class(doc->tab_box, "modified");
+        }
+        gtk_accessible_update_property(GTK_ACCESSIBLE(doc->title_label),
+                                       GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                       accessible_title,
+                                       -1);
+    } else if (was_modified) {
+        gtk_widget_remove_css_class(doc->tab_box, "modified");
+        gtk_accessible_reset_property(GTK_ACCESSIBLE(doc->title_label),
+                                      GTK_ACCESSIBLE_PROPERTY_LABEL);
+    }
 }
 
 const char *

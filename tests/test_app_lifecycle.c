@@ -277,6 +277,52 @@ test_window_semantic_styling_hooks(void)
 }
 
 static void
+assert_tab_modified_state(LmmeDocument *doc, gboolean modified)
+{
+    g_autofree char *base = g_path_get_basename(doc->path);
+
+    g_assert_cmpstr(gtk_label_get_text(GTK_LABEL(doc->title_label)), ==, base);
+    g_assert_cmpint(gtk_widget_has_css_class(doc->tab_box, "modified"), ==, modified);
+    if (modified) {
+        g_autofree char *accessible_title = g_strdup_printf("%s, modified", base);
+
+        gtk_test_accessible_assert_property(doc->title_label,
+                                            GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                            accessible_title);
+    }
+}
+
+static void
+test_tab_modified_state_indicator(void)
+{
+    GtkApplication *gtk_app = NULL;
+    g_autofree char *root = NULL;
+    g_autofree char *note_path = NULL;
+    LmmeApp *app = test_app_with_window(&gtk_app, &root);
+    LmmeDocument *doc = NULL;
+
+    note_path = g_build_filename(root, "modified-state.md", NULL);
+    g_assert_true(g_file_set_contents(note_path, "stable title\n", -1, NULL));
+    g_assert_true(lmme_tabs_open_file(app, note_path, NULL));
+    doc = lmme_tabs_get_active(app);
+    g_assert_nonnull(doc);
+
+    assert_tab_modified_state(doc, FALSE);
+    lmme_document_set_save_state(doc, LMME_SAVE_STATE_MODIFIED);
+    assert_tab_modified_state(doc, TRUE);
+    lmme_document_set_save_state(doc, LMME_SAVE_STATE_AUTOSAVED);
+    assert_tab_modified_state(doc, FALSE);
+    lmme_document_set_save_state(doc, LMME_SAVE_STATE_MODIFIED);
+    assert_tab_modified_state(doc, TRUE);
+    lmme_document_set_save_state(doc, LMME_SAVE_STATE_ERROR);
+    assert_tab_modified_state(doc, TRUE);
+    lmme_document_set_save_state(doc, LMME_SAVE_STATE_SAVED);
+    assert_tab_modified_state(doc, FALSE);
+
+    test_full_app_teardown(app, gtk_app);
+}
+
+static void
 test_teardown_cancels_pending_sources(void)
 {
     GtkApplication *gtk_app = NULL;
@@ -558,6 +604,7 @@ main(int argc, char **argv)
     g_test_add_func("/app/command-refresh/per-app-state", test_command_refresh_per_app_state);
     g_test_add_func("/app/teardown/window-before-app-state", test_teardown_window_before_app_state);
     g_test_add_func("/app/window/semantic-styling-hooks", test_window_semantic_styling_hooks);
+    g_test_add_func("/app/tabs/modified-state-indicator", test_tab_modified_state_indicator);
     g_test_add_func("/app/teardown/cancels-pending-sources", test_teardown_cancels_pending_sources);
     g_test_add_func("/app/teardown/repeated", test_teardown_repeated);
     g_test_add_func("/app/teardown/shutdown-prepare-cancelled",

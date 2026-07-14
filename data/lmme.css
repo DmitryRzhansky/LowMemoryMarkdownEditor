@@ -218,6 +218,16 @@ window.dialog entry:focus {
   padding: 3px 6px;
   background-color: transparent;
   color: inherit;
+  border-top: 2px solid transparent;
+  box-shadow: inset 0 -2px transparent;
+}
+
+.editor-tabs .tab-label.modified {
+  border-top-color: #d6a85f;
+}
+
+.editor-tabs > header tab:checked .tab-label {
+  box-shadow: inset 0 -2px #78a9d1;
 }
 
 .editor-tabs .tab-title {
