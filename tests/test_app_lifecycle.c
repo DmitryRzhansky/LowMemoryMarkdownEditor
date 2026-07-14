@@ -9,6 +9,7 @@
 #include "command/command_actions_test.h"
 #include "document/document.h"
 #include "document/document_autosave.h"
+#include "document/file_monitor.h"
 #include "document/recovery.h"
 #include "document/tabs.h"
 #include "document/tabs_test.h"
@@ -398,6 +399,57 @@ test_teardown_cancels_pending_sources(void)
 }
 
 static void
+test_external_conflict_reload_before_idle_resets_source(void)
+{
+    GtkApplication *gtk_app = NULL;
+    g_autofree char *root = NULL;
+    g_autofree char *note_path = NULL;
+    g_autoptr(GError) error = NULL;
+    LmmeFileFingerprint fingerprint = {0};
+    LmmeApp *app = test_app_with_window(&gtk_app, &root);
+    LmmeDocument *doc = NULL;
+
+    app->next_document_id = 1;
+    note_path = g_build_filename(root, "reload-before-idle.md", NULL);
+    g_assert_true(g_file_set_contents(note_path, "initial\n", -1, NULL));
+    g_assert_true(lmme_tabs_open_file(app, note_path, &error));
+    g_assert_no_error(error);
+    doc = lmme_tabs_get_active(app);
+    g_assert_nonnull(doc);
+    g_assert_cmpuint(doc->id, !=, 0);
+    lmme_document_file_monitor_detach(doc);
+
+    doc->disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
+    lmme_external_conflict_request(doc);
+    g_assert_cmpuint(doc->external_conflict_source_id, !=, 0);
+    g_assert_cmpint(doc->external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_SCHEDULED);
+
+    g_assert_true(g_file_set_contents(note_path, "reloaded\n", -1, NULL));
+    g_assert_true(lmme_file_fingerprint_read(note_path, &fingerprint, &error));
+    g_assert_no_error(error);
+    g_assert_true(lmme_document_reload_from_disk(doc, &fingerprint, &error));
+    g_assert_no_error(error);
+    g_assert_cmpint(doc->disk_state, ==, LMME_DISK_STATE_NORMAL);
+
+    g_assert_true(drain_main_context(64));
+    g_assert_cmpuint(doc->external_conflict_source_id, ==, 0);
+    g_assert_cmpint(doc->external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_IDLE);
+    g_assert_false(doc->external_change_pending);
+
+    doc->disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
+    lmme_external_conflict_request(doc);
+    g_assert_cmpuint(doc->external_conflict_source_id, !=, 0);
+    g_assert_cmpint(doc->external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_SCHEDULED);
+    lmme_external_conflict_cancel(doc);
+    g_assert_cmpuint(doc->external_conflict_source_id, ==, 0);
+    g_assert_cmpint(doc->external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_IDLE);
+    g_assert_false(doc->external_change_pending);
+
+    test_full_app_teardown(app, gtk_app);
+    g_assert_true(drain_main_context(64));
+}
+
+static void
 test_teardown_repeated(void)
 {
     guint cycle = 0;
@@ -697,6 +749,8 @@ main(int argc, char **argv)
     g_test_add_func("/app/window/semantic-styling-hooks", test_window_semantic_styling_hooks);
     g_test_add_func("/app/tabs/modified-state-indicator", test_tab_modified_state_indicator);
     g_test_add_func("/app/teardown/cancels-pending-sources", test_teardown_cancels_pending_sources);
+    g_test_add_func("/app/external-conflict/reload-before-idle",
+                    test_external_conflict_reload_before_idle_resets_source);
     g_test_add_func("/app/teardown/repeated", test_teardown_repeated);
     g_test_add_func("/app/teardown/shutdown-prepare-cancelled",
                     test_teardown_shutdown_prepare_cancelled);

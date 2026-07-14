@@ -126,6 +126,7 @@ test_external_conflict_request_state_machine(void)
 {
     LmmeApp app = {0};
     LmmeDocument doc = {0};
+    guint first_source_id = 0;
 
     doc.app = &app;
     doc.id = 7;
@@ -134,12 +135,19 @@ test_external_conflict_request_state_machine(void)
     lmme_external_conflict_request(&doc);
     g_assert_cmpint(doc.external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_SCHEDULED);
     g_assert_cmpuint(doc.external_conflict_source_id, !=, 0);
+    first_source_id = doc.external_conflict_source_id;
 
     lmme_external_conflict_request(&doc);
     g_assert_true(doc.external_change_pending);
-    g_assert_cmpuint(doc.external_conflict_source_id, !=, 0);
+    g_assert_cmpuint(doc.external_conflict_source_id, ==, first_source_id);
 
     lmme_external_conflict_cancel(&doc);
+    g_assert_cmpint(doc.external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_IDLE);
+    g_assert_cmpuint(doc.external_conflict_source_id, ==, 0);
+    g_assert_false(doc.external_change_pending);
+
+    lmme_external_conflict_cancel(&doc);
+    g_assert_true(lmme_app_test_drain_main_context(64));
     g_assert_cmpint(doc.external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_IDLE);
     g_assert_cmpuint(doc.external_conflict_source_id, ==, 0);
     g_assert_false(doc.external_change_pending);
@@ -186,6 +194,44 @@ test_external_conflict_stale_idle_resets_state(void)
     g_ptr_array_unref(app.documents);
 }
 
+static void
+test_external_conflict_repeated_stale_and_cancel(void)
+{
+    LmmeApp app = {0};
+    LmmeDocument doc = {0};
+
+    app.documents = g_ptr_array_new();
+    doc.app = &app;
+    doc.id = 8;
+    g_ptr_array_add(app.documents, &doc);
+
+    for (guint cycle = 0; cycle < 100; cycle++) {
+        doc.disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
+        lmme_external_conflict_request(&doc);
+        g_assert_cmpuint(doc.external_conflict_source_id, !=, 0);
+        g_assert_cmpint(doc.external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_SCHEDULED);
+
+        doc.disk_state = LMME_DISK_STATE_NORMAL;
+        g_assert_true(lmme_app_test_drain_main_context(64));
+        g_assert_cmpuint(doc.external_conflict_source_id, ==, 0);
+        g_assert_cmpint(doc.external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_IDLE);
+        g_assert_false(doc.external_change_pending);
+
+        doc.disk_state = LMME_DISK_STATE_EXTERNAL_DELETED;
+        lmme_external_conflict_request(&doc);
+        g_assert_cmpuint(doc.external_conflict_source_id, !=, 0);
+        g_assert_cmpint(doc.external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_SCHEDULED);
+
+        lmme_external_conflict_cancel(&doc);
+        g_assert_cmpuint(doc.external_conflict_source_id, ==, 0);
+        g_assert_cmpint(doc.external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_IDLE);
+        g_assert_false(doc.external_change_pending);
+    }
+
+    g_assert_true(lmme_app_test_drain_main_context(64));
+    g_ptr_array_unref(app.documents);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -202,5 +248,7 @@ main(int argc, char **argv)
                     test_external_conflict_presenting_sets_pending);
     g_test_add_func("/file-monitor/conflict/stale-idle-reset",
                     test_external_conflict_stale_idle_resets_state);
+    g_test_add_func("/file-monitor/conflict/repeated-stale-and-cancel",
+                    test_external_conflict_repeated_stale_and_cancel);
     return g_test_run();
 }
