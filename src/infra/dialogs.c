@@ -48,6 +48,11 @@ dialog_shell_new(GtkWindow *parent, const char *title)
     shell.window = gtk_window_new();
     shell.content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     shell.buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_add_css_class(shell.window, "dialog");
+    gtk_widget_add_css_class(shell.window, "lmme-dialog");
+    gtk_widget_add_css_class(root, "dialog-root");
+    gtk_widget_add_css_class(shell.content, "dialog-content");
+    gtk_widget_add_css_class(shell.buttons, "dialog-actions");
     gtk_window_set_title(GTK_WINDOW(shell.window), title);
     gtk_window_set_modal(GTK_WINDOW(shell.window), TRUE);
     gtk_window_set_resizable(GTK_WINDOW(shell.window), FALSE);
@@ -66,13 +71,14 @@ dialog_shell_new(GtkWindow *parent, const char *title)
     return shell;
 }
 
-static void
+static GtkWidget *
 dialog_add_button(DialogShell *shell, const char *label, int response)
 {
     GtkWidget *button = gtk_button_new_with_label(label);
     g_object_set_data(G_OBJECT(button), dialog_response_key, GINT_TO_POINTER(response));
     g_signal_connect(button, "clicked", G_CALLBACK(on_response_button_clicked), NULL);
     gtk_box_append(GTK_BOX(shell->buttons), button);
+    return button;
 }
 
 static int
@@ -166,7 +172,8 @@ lmme_dialog_confirm_delete(GtkWindow *parent, gboolean *dont_show_again)
                    dialog_label("This action permanently deletes the selected item."));
     gtk_box_append(GTK_BOX(shell.content), check);
     dialog_add_button(&shell, "Cancel", GTK_RESPONSE_CANCEL);
-    dialog_add_button(&shell, "Delete", GTK_RESPONSE_ACCEPT);
+    gtk_widget_add_css_class(dialog_add_button(&shell, "Delete", GTK_RESPONSE_ACCEPT),
+                             "destructive-action");
     confirmed = dialog_run(&shell) == GTK_RESPONSE_ACCEPT;
     if (dont_show_again != NULL) {
         *dont_show_again = gtk_check_button_get_active(GTK_CHECK_BUTTON(check));
@@ -189,7 +196,10 @@ lmme_dialog_confirm_delete_open_documents(GtkWindow *parent,
     DialogShell shell = dialog_shell_new(parent, "Delete Open Files");
     gtk_box_append(GTK_BOX(shell.content), dialog_label(message));
     dialog_add_button(&shell, "Cancel", GTK_RESPONSE_CANCEL);
-    dialog_add_button(&shell, "Delete and Discard Changes", GTK_RESPONSE_ACCEPT);
+    gtk_widget_add_css_class(dialog_add_button(&shell,
+                                               "Delete and Discard Changes",
+                                               GTK_RESPONSE_ACCEPT),
+                             "destructive-action");
     gboolean confirmed = dialog_run(&shell) == GTK_RESPONSE_ACCEPT;
     dialog_shell_destroy(&shell);
     return confirmed;
@@ -372,7 +382,8 @@ lmme_dialog_confirm_overwrite(GtkWindow *parent, const char *path)
     DialogShell shell = dialog_shell_new(parent, "Replace File");
     gtk_box_append(GTK_BOX(shell.content), dialog_label(message));
     dialog_add_button(&shell, "Cancel", GTK_RESPONSE_CANCEL);
-    dialog_add_button(&shell, "Replace", GTK_RESPONSE_ACCEPT);
+    gtk_widget_add_css_class(dialog_add_button(&shell, "Replace", GTK_RESPONSE_ACCEPT),
+                             "destructive-action");
     gboolean confirmed = dialog_run(&shell) == GTK_RESPONSE_ACCEPT;
     dialog_shell_destroy(&shell);
     return confirmed;
@@ -386,7 +397,8 @@ lmme_dialog_confirm_close_unsaved(GtkWindow *parent, const char *filename)
     DialogShell shell = dialog_shell_new(parent, "Close");
     gtk_box_append(GTK_BOX(shell.content), dialog_label(message));
     dialog_add_button(&shell, "Cancel", GTK_RESPONSE_CANCEL);
-    dialog_add_button(&shell, "Close", GTK_RESPONSE_ACCEPT);
+    gtk_widget_add_css_class(dialog_add_button(&shell, "Close", GTK_RESPONSE_ACCEPT),
+                             "destructive-action");
     gboolean confirmed = dialog_run(&shell) == GTK_RESPONSE_ACCEPT;
     dialog_shell_destroy(&shell);
     return confirmed;
@@ -422,7 +434,10 @@ lmme_dialog_resolve_save_failure(GtkWindow *parent,
         dialog_add_button(&shell, "Close and Keep Recovery", RESPONSE_KEEP_RECOVERY);
     }
     if (allow_discard_local) {
-        dialog_add_button(&shell, "Discard Local Changes", RESPONSE_DISCARD_LOCAL);
+        gtk_widget_add_css_class(dialog_add_button(&shell,
+                                                   "Discard Local Changes",
+                                                   RESPONSE_DISCARD_LOCAL),
+                                 "destructive-action");
     }
     response = dialog_run(&shell);
     dialog_shell_destroy(&shell);
@@ -458,7 +473,8 @@ lmme_dialog_choose_recovery(GtkWindow *parent,
                        dialog_label("The original file is missing or changed. Restoring keeps the buffer in conflict state."));
     }
     dialog_add_button(&shell, "Later", GTK_RESPONSE_CANCEL);
-    dialog_add_button(&shell, "Discard Recovery", RESPONSE_DISCARD);
+    gtk_widget_add_css_class(dialog_add_button(&shell, "Discard Recovery", RESPONSE_DISCARD),
+                             "destructive-action");
     dialog_add_button(&shell, "Restore", RESPONSE_RESTORE);
     response = dialog_run(&shell);
     dialog_shell_destroy(&shell);
@@ -492,9 +508,11 @@ lmme_dialog_external_conflict(GtkWindow *parent,
     gtk_box_append(GTK_BOX(shell.content), dialog_label(message));
     dialog_add_button(&shell, "Keep Local Changes", GTK_RESPONSE_CANCEL);
     dialog_add_button(&shell, "Save As", RESPONSE_SAVE_AS);
-    dialog_add_button(&shell, "Overwrite Disk", RESPONSE_OVERWRITE);
+    gtk_widget_add_css_class(dialog_add_button(&shell, "Overwrite Disk", RESPONSE_OVERWRITE),
+                             "destructive-action");
     if (file_exists && allow_reload) {
-        dialog_add_button(&shell, "Reload from Disk", RESPONSE_RELOAD);
+        gtk_widget_add_css_class(dialog_add_button(&shell, "Reload from Disk", RESPONSE_RELOAD),
+                                 "destructive-action");
     }
     response = dialog_run(&shell);
     dialog_shell_destroy(&shell);

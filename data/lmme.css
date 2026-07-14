@@ -368,6 +368,18 @@ window.dialog box {
   color: #e3e6ea;
 }
 
+window.lmme-dialog .dialog-root {
+  background-color: #282b30;
+}
+
+window.lmme-dialog .dialog-content {
+  color: #e3e6ea;
+}
+
+window.lmme-dialog .dialog-actions {
+  background-color: transparent;
+}
+
 window.dialog label {
   background-color: transparent;
   color: #e3e6ea;
@@ -393,6 +405,27 @@ window.dialog button:active {
 window.dialog button:disabled {
   color: #777d86;
   border-color: #393d44;
+}
+
+window.dialog button.destructive-action {
+  background-color: #6a3036;
+  color: #ffffff;
+  border-color: #9a4851;
+}
+
+window.dialog button.destructive-action:hover {
+  background-color: #7d3940;
+  border-color: #b05a63;
+}
+
+window.dialog button.destructive-action:active {
+  background-color: #55262b;
+}
+
+window.dialog button.destructive-action:disabled {
+  background-color: #473034;
+  color: #9c8588;
+  border-color: #5b3b40;
 }
 
 tooltip.background {

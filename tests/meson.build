@@ -13,6 +13,7 @@ test_sources = {
   'test_file_monitor_state': 'test_file_monitor_state.c',
   'test_document_lifecycle': 'test_document_lifecycle.c',
   'test_document_paths': 'test_document_paths.c',
+  'test_dialogs': 'test_dialogs.c',
   'file_tree_refresh': 'test_file_tree_refresh.c',
   'file_tree_crash_repro': 'test_file_tree_crash_repro.c',
 }
