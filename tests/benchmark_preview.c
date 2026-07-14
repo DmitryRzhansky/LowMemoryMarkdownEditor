@@ -108,9 +108,13 @@ run_case(BenchmarkDataset dataset, gsize bytes)
         gint64 started = 0;
         gint64 elapsed = 0;
 
-        lmme_preview_clear_editable_preview(GTK_TEXT_BUFFER(buffer));
+        lmme_preview_clear_editable_preview(NULL, GTK_TEXT_BUFFER(buffer));
         started = g_get_monotonic_time();
-        last_result = lmme_preview_apply_editable_preview(GTK_TEXT_BUFFER(buffer), TRUE, TRUE);
+        last_result = lmme_preview_apply_editable_preview(NULL,
+                                                         GTK_TEXT_BUFFER(buffer),
+                                                         TRUE,
+                                                         TRUE,
+                                                         NULL);
         elapsed = g_get_monotonic_time() - started;
         samples[run] = elapsed;
     }

@@ -19,6 +19,7 @@ Small Linux-only GTK Markdown editor focused on low memory usage and local folde
 - blocks destructive reload/close choices until current local contents are saved, recovered, or explicitly discarded
 - detects external file changes without a time-based ignore window
 - toggles between Source and single-pane Editable Preview styling
+- shows bounded local image previews in Editable Preview without changing Markdown source
 - supports editor font zoom with Ctrl++, Ctrl+-, Ctrl+0, and numpad variants
 - supports image insertion into a workspace-level `img` folder
 - uses lightweight system GTK symbolic icons for toolbar, tabs, and file tree

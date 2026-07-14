@@ -24,7 +24,11 @@ run_case(guint lines, guint moves)
     guint old_line = 0;
 
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(buffer), markdown, -1);
-    g_assert_cmpint(lmme_preview_apply_editable_preview(GTK_TEXT_BUFFER(buffer), TRUE, TRUE),
+    g_assert_cmpint(lmme_preview_apply_editable_preview(NULL,
+                                                       GTK_TEXT_BUFFER(buffer),
+                                                       TRUE,
+                                                       TRUE,
+                                                       NULL),
                     ==,
                     LMME_PREVIEW_APPLY_OK);
 

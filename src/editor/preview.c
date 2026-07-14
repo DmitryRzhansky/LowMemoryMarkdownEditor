@@ -1,5 +1,6 @@
 #include "editor/preview.h"
 
+#include "editor/editor_view.h"
 #include "editor/preview_style.h"
 
 #include <stdarg.h>
@@ -217,6 +218,11 @@ lmme_preview_ensure_tags(GtkTextBuffer *buffer)
                           PANGO_STYLE_ITALIC,
                           NULL);
     create_tag_if_missing(buffer,
+                          "lmme-preview-image-display",
+                          "pixels-below-lines",
+                          292,
+                          NULL);
+    create_tag_if_missing(buffer,
                           "lmme-preview-hr",
                           "foreground",
                           "#89939e",
@@ -267,8 +273,8 @@ lmme_preview_ensure_tags(GtkTextBuffer *buffer)
     create_tag_if_missing(buffer, active_marker_tag_name, "foreground", "#a7b0ba", NULL);
 }
 
-void
-lmme_preview_clear_editable_preview(GtkTextBuffer *buffer)
+static void
+clear_editable_preview_tags(GtkTextBuffer *buffer)
 {
     GtkTextIter start;
     GtkTextIter end;
@@ -294,8 +300,22 @@ lmme_preview_clear_editable_preview(GtkTextBuffer *buffer)
             gtk_text_buffer_remove_tag(buffer, active_marker, &start, &end);
         }
     }
+    {
+        GtkTextTag *image_display =
+            gtk_text_tag_table_lookup(table, "lmme-preview-image-display");
+        if (image_display != NULL) {
+            gtk_text_buffer_remove_tag(buffer, image_display, &start, &end);
+        }
+    }
     g_object_set_data(G_OBJECT(buffer), marker_cache_key, NULL);
     g_object_set_data(G_OBJECT(buffer), marker_char_count_key, NULL);
+}
+
+void
+lmme_preview_clear_editable_preview(GtkWidget *view, GtkTextBuffer *buffer)
+{
+    clear_editable_preview_tags(buffer);
+    lmme_editor_view_clear_preview_images(view, TRUE);
 }
 
 static void
@@ -421,9 +441,11 @@ lmme_preview_marker_cache_is_current(GtkTextBuffer *buffer)
 }
 
 LmmePreviewApplyResult
-lmme_preview_apply_editable_preview(GtkTextBuffer *buffer,
+lmme_preview_apply_editable_preview(GtkWidget *view,
+                                    GtkTextBuffer *buffer,
                                     gboolean hide_frontmatter,
-                                    gboolean hide_markdown_markers)
+                                    gboolean hide_markdown_markers,
+                                    const char *workspace_root)
 {
     g_autofree char *text = NULL;
     g_autoptr(GPtrArray) ranges = NULL;
@@ -437,10 +459,12 @@ lmme_preview_apply_editable_preview(GtkTextBuffer *buffer,
     }
 
     lmme_preview_ensure_tags(buffer);
-    lmme_preview_clear_editable_preview(buffer);
+    clear_editable_preview_tags(buffer);
+    lmme_editor_view_clear_preview_images(view, FALSE);
 
     text = dup_buffer_text(buffer);
     if (strlen(text) > LMME_PREVIEW_MAX_STYLE_BYTES) {
+        lmme_editor_view_clear_preview_images(view, TRUE);
         return LMME_PREVIEW_APPLY_SKIPPED_LARGE_FILE;
     }
 
@@ -448,6 +472,7 @@ lmme_preview_apply_editable_preview(GtkTextBuffer *buffer,
     active_line = (guint)gtk_text_iter_get_line(&cursor);
     ranges = lmme_preview_collect_ranges(text, hide_frontmatter, G_MAXUINT, hide_markdown_markers);
     if (ranges == NULL) {
+        lmme_editor_view_clear_preview_images(view, TRUE);
         return LMME_PREVIEW_APPLY_FAILED;
     }
 
@@ -483,6 +508,7 @@ lmme_preview_apply_editable_preview(GtkTextBuffer *buffer,
                        GUINT_TO_POINTER((guint)total_chars));
 
     lmme_preview_update_active_line(buffer, 0, FALSE, active_line);
+    lmme_editor_view_update_preview_images(view, buffer, text, ranges, workspace_root);
 
     return LMME_PREVIEW_APPLY_OK;
 }

@@ -268,9 +268,16 @@ lmme_document_set_preview_visible(LmmeDocument *doc, gboolean visible)
     }
 
     if (visible) {
-        result = lmme_preview_apply_editable_preview(buffer, doc->app->config.preview_hide_frontmatter, TRUE);
+        const char *workspace_root =
+            doc->app->workspace != NULL ? doc->app->workspace->path : NULL;
+
+        result = lmme_preview_apply_editable_preview(doc->source_view,
+                                                     buffer,
+                                                     doc->app->config.preview_hide_frontmatter,
+                                                     TRUE,
+                                                     workspace_root);
         if (result == LMME_PREVIEW_APPLY_FAILED) {
-            lmme_preview_clear_editable_preview(buffer);
+            lmme_preview_clear_editable_preview(doc->source_view, buffer);
             gtk_widget_remove_css_class(doc->source_view, "preview-edit-mode");
         } else {
             gtk_widget_add_css_class(doc->source_view, "preview-edit-mode");
@@ -281,7 +288,7 @@ lmme_document_set_preview_visible(LmmeDocument *doc, gboolean visible)
             doc->preview_full_parse_count++;
         }
     } else {
-        lmme_preview_clear_editable_preview(buffer);
+        lmme_preview_clear_editable_preview(doc->source_view, buffer);
         gtk_widget_remove_css_class(doc->source_view, "preview-edit-mode");
         doc->preview_active_line_valid = FALSE;
         doc->preview_dirty = TRUE;

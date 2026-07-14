@@ -96,6 +96,7 @@ core_sources = files(
   'src/infra/config.c',
   'src/workspace/workspace.c',
   'src/editor/editor.c',
+  'src/editor/editor_view.c',
   'src/editor/editor_ops.c',
   'src/editor/editor_search.c',
   'src/editor/preview.c',

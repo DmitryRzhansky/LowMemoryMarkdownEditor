@@ -1,5 +1,7 @@
 #include "editor/editor.h"
 
+#include "editor/editor_view.h"
+
 #include "infra/util.h"
 
 static GtkCssProvider *editor_font_provider = NULL;
@@ -105,7 +107,7 @@ lmme_editor_create_view(GtkSourceBuffer **out_buffer, const LmmeConfig *config)
     GtkSourceLanguageManager *manager = gtk_source_language_manager_get_default();
     GtkSourceLanguage *language = gtk_source_language_manager_get_language(manager, "markdown");
     GtkSourceBuffer *buffer = language != NULL ? gtk_source_buffer_new_with_language(language) : gtk_source_buffer_new(NULL);
-    GtkWidget *view = gtk_source_view_new_with_buffer(buffer);
+    GtkWidget *view = lmme_editor_view_new(buffer);
     GtkSourceStyleScheme *scheme = find_dark_style_scheme();
 
     gtk_widget_add_css_class(view, "editor-view");

@@ -553,7 +553,11 @@ test_cursor_preview_update_does_not_full_parse(void)
     doc.app = &app;
     doc.buffer = gtk_source_buffer_new(NULL);
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(doc.buffer), "# First\n# Second\n", -1);
-    g_assert_cmpint(lmme_preview_apply_editable_preview(GTK_TEXT_BUFFER(doc.buffer), TRUE, TRUE),
+    g_assert_cmpint(lmme_preview_apply_editable_preview(NULL,
+                                                       GTK_TEXT_BUFFER(doc.buffer),
+                                                       TRUE,
+                                                       TRUE,
+                                                       NULL),
                     ==,
                     LMME_PREVIEW_APPLY_OK);
     doc.preview_dirty = FALSE;

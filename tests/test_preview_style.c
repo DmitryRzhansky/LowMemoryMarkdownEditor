@@ -1,7 +1,10 @@
 #include <glib.h>
+#include <glib/gstdio.h>
 #include <gtksourceview/gtksource.h>
 #include <string.h>
 
+#include "editor/editor.h"
+#include "editor/editor_view.h"
 #include "editor/preview.h"
 #include "editor/preview_style.h"
 
@@ -544,7 +547,11 @@ test_table_preview_api_lifecycle(void)
     gtk_text_buffer_set_text(GTK_TEXT_BUFFER(buffer), input, -1);
     before = g_strdup(input);
 
-    g_assert_cmpint(lmme_preview_apply_editable_preview(GTK_TEXT_BUFFER(buffer), TRUE, TRUE),
+    g_assert_cmpint(lmme_preview_apply_editable_preview(NULL,
+                                                       GTK_TEXT_BUFFER(buffer),
+                                                       TRUE,
+                                                       TRUE,
+                                                       NULL),
                     ==,
                     LMME_PREVIEW_APPLY_OK);
 
@@ -556,13 +563,17 @@ test_table_preview_api_lifecycle(void)
     first_tag = gtk_text_tag_table_lookup(table, "lmme-preview-table-header-row");
     g_assert_nonnull(first_tag);
 
-    g_assert_cmpint(lmme_preview_apply_editable_preview(GTK_TEXT_BUFFER(buffer), TRUE, TRUE),
+    g_assert_cmpint(lmme_preview_apply_editable_preview(NULL,
+                                                       GTK_TEXT_BUFFER(buffer),
+                                                       TRUE,
+                                                       TRUE,
+                                                       NULL),
                     ==,
                     LMME_PREVIEW_APPLY_OK);
     second_tag = gtk_text_tag_table_lookup(table, "lmme-preview-table-header-row");
     g_assert_true(first_tag == second_tag);
 
-    lmme_preview_clear_editable_preview(GTK_TEXT_BUFFER(buffer));
+    lmme_preview_clear_editable_preview(NULL, GTK_TEXT_BUFFER(buffer));
     {
         GtkTextTag *body_tag = gtk_text_tag_table_lookup(table, "lmme-preview-table-body-row");
         GtkTextIter body_iter;
@@ -668,6 +679,96 @@ test_preview_dark_tag_properties(void)
     g_assert_true(tag == required_tag(table, "lmme-preview-table-header-row"));
 }
 
+static void
+write_test_png(const char *path, guint32 color)
+{
+    g_autoptr(GError) error = NULL;
+    g_autoptr(GdkPixbuf) pixbuf = gdk_pixbuf_new(GDK_COLORSPACE_RGB, TRUE, 8, 4, 3);
+
+    g_assert_nonnull(pixbuf);
+    gdk_pixbuf_fill(pixbuf, color);
+    g_assert_true(gdk_pixbuf_save(pixbuf, path, "png", &error, NULL));
+    g_assert_no_error(error);
+}
+
+static void
+test_local_image_preview_lifecycle(void)
+{
+    const char *markdown =
+        "![](img/inside.png)\n"
+        "![](../outside.png)\n"
+        "![](https://example.com/remote.png)\n";
+    LmmeConfig config = {
+        .line_numbers = TRUE,
+        .word_wrap = TRUE,
+    };
+    g_autofree char *container = g_dir_make_tmp("lmme-preview-image-XXXXXX", NULL);
+    g_autofree char *workspace = g_build_filename(container, "workspace", NULL);
+    g_autofree char *image_dir = g_build_filename(workspace, "img", NULL);
+    g_autofree char *inside_path = g_build_filename(image_dir, "inside.png", NULL);
+    g_autofree char *outside_path = g_build_filename(container, "outside.png", NULL);
+    GtkSourceBuffer *buffer = NULL;
+    GtkWidget *view = NULL;
+    GtkTextIter start;
+    GtkTextIter end;
+    GtkTextTag *display_tag = NULL;
+    g_autofree char *after = NULL;
+
+    gtk_init();
+    g_assert_cmpint(g_mkdir(workspace, 0700), ==, 0);
+    g_assert_cmpint(g_mkdir(image_dir, 0700), ==, 0);
+    write_test_png(inside_path, 0x336699ffU);
+    write_test_png(outside_path, 0xcc3300ffU);
+
+    view = lmme_editor_create_view(&buffer, &config);
+    gtk_text_buffer_set_text(GTK_TEXT_BUFFER(buffer), markdown, -1);
+    gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(buffer), FALSE);
+
+    g_assert_cmpint(lmme_preview_apply_editable_preview(view,
+                                                       GTK_TEXT_BUFFER(buffer),
+                                                       TRUE,
+                                                       TRUE,
+                                                       workspace),
+                    ==,
+                    LMME_PREVIEW_APPLY_OK);
+    g_assert_cmpuint(lmme_editor_view_preview_image_count(view), ==, 1);
+    g_assert_false(gtk_text_buffer_get_modified(GTK_TEXT_BUFFER(buffer)));
+
+    gtk_text_buffer_get_bounds(GTK_TEXT_BUFFER(buffer), &start, &end);
+    after = gtk_text_buffer_get_text(GTK_TEXT_BUFFER(buffer), &start, &end, TRUE);
+    g_assert_cmpstr(after, ==, markdown);
+
+    display_tag = gtk_text_tag_table_lookup(
+        gtk_text_buffer_get_tag_table(GTK_TEXT_BUFFER(buffer)),
+        "lmme-preview-image-display");
+    g_assert_nonnull(display_tag);
+    gtk_text_buffer_get_start_iter(GTK_TEXT_BUFFER(buffer), &start);
+    g_assert_true(gtk_text_iter_has_tag(&start, display_tag));
+
+    g_assert_cmpint(lmme_preview_apply_editable_preview(view,
+                                                       GTK_TEXT_BUFFER(buffer),
+                                                       TRUE,
+                                                       TRUE,
+                                                       workspace),
+                    ==,
+                    LMME_PREVIEW_APPLY_OK);
+    g_assert_cmpuint(lmme_editor_view_preview_image_count(view), ==, 1);
+
+    lmme_preview_clear_editable_preview(view, GTK_TEXT_BUFFER(buffer));
+    g_assert_cmpuint(lmme_editor_view_preview_image_count(view), ==, 0);
+    gtk_text_buffer_get_start_iter(GTK_TEXT_BUFFER(buffer), &start);
+    g_assert_false(gtk_text_iter_has_tag(&start, display_tag));
+
+    g_object_ref_sink(view);
+    g_object_unref(view);
+    g_object_unref(buffer);
+    g_assert_cmpint(g_remove(inside_path), ==, 0);
+    g_assert_cmpint(g_remove(outside_path), ==, 0);
+    g_assert_cmpint(g_rmdir(image_dir), ==, 0);
+    g_assert_cmpint(g_rmdir(workspace), ==, 0);
+    g_assert_cmpint(g_rmdir(container), ==, 0);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -709,5 +810,6 @@ main(int argc, char **argv)
     g_test_add_func("/preview-style/table/user-real-world", test_table_user_real_world_alignment);
     g_test_add_func("/preview-style/table/preview-api-lifecycle", test_table_preview_api_lifecycle);
     g_test_add_func("/preview-style/tags/dark-properties", test_preview_dark_tag_properties);
+    g_test_add_func("/preview-style/images/local-lifecycle", test_local_image_preview_lifecycle);
     return g_test_run();
 }
