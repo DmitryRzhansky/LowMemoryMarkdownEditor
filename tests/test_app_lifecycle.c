@@ -15,6 +15,8 @@
 #include "features/image_insert.h"
 #include "infra/config.h"
 #include "ui/external_conflict.h"
+#include "ui/tab_context_menu.h"
+#include "ui/tree_context_menu.h"
 #include "ui/window.h"
 #include "workspace/workspace.h"
 
@@ -618,6 +620,67 @@ test_image_async_survives_app_teardown(void)
     g_assert_true(drain_main_context(256));
 }
 
+typedef gboolean (*ContextPopoverTestOpenFunc)(LmmeApp *app,
+                                                gboolean *out_finalized);
+
+static void
+run_context_popover_rebuild_child(ContextPopoverTestOpenFunc open_popover,
+                                  const char *finalized_message)
+{
+    LmmeApp app = {0};
+    gboolean finalized = FALSE;
+
+    app.window = gtk_window_new();
+    app.root_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_window_set_child(GTK_WINDOW(app.window), app.root_box);
+    g_assert_true(open_popover(&app, &finalized));
+    gtk_window_destroy(GTK_WINDOW(app.window));
+    app.window = NULL;
+    app.root_box = NULL;
+    g_assert_true(finalized);
+    g_print("%s\n", finalized_message);
+
+    app.window = gtk_window_new();
+    app.root_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_window_set_child(GTK_WINDOW(app.window), app.root_box);
+    g_assert_true(open_popover(&app, NULL));
+    gtk_window_destroy(GTK_WINDOW(app.window));
+}
+
+static void
+test_tree_context_popover_window_rebuild_reproduction(void)
+{
+    if (g_test_subprocess()) {
+        g_log_set_always_fatal(G_LOG_FATAL_MASK |
+                               G_LOG_LEVEL_WARNING |
+                               G_LOG_LEVEL_CRITICAL);
+        run_context_popover_rebuild_child(lmme_tree_context_menu_test_open,
+                                          "tree-popover-finalized");
+        return;
+    }
+
+    g_test_trap_subprocess(NULL, 5 * G_TIME_SPAN_SECOND, G_TEST_SUBPROCESS_DEFAULT);
+    g_test_trap_assert_stdout("*tree-popover-finalized*");
+    g_test_trap_assert_failed();
+}
+
+static void
+test_tab_context_popover_window_rebuild_reproduction(void)
+{
+    if (g_test_subprocess()) {
+        g_log_set_always_fatal(G_LOG_FATAL_MASK |
+                               G_LOG_LEVEL_WARNING |
+                               G_LOG_LEVEL_CRITICAL);
+        run_context_popover_rebuild_child(lmme_tab_context_menu_test_open,
+                                          "tab-popover-finalized");
+        return;
+    }
+
+    g_test_trap_subprocess(NULL, 5 * G_TIME_SPAN_SECOND, G_TEST_SUBPROCESS_DEFAULT);
+    g_test_trap_assert_stdout("*tab-popover-finalized*");
+    g_test_trap_assert_failed();
+}
+
 int
 main(int argc, char **argv)
 {
@@ -640,5 +703,9 @@ main(int argc, char **argv)
     g_test_add_func("/app/session/serialization", test_session_serialization);
     g_test_add_func("/app/session/shutdown-signal", test_session_shutdown_signal);
     g_test_add_func("/app/image-async/survives-app-teardown", test_image_async_survives_app_teardown);
+    g_test_add_func("/app/context-popover/tree-window-rebuild-reproduction",
+                    test_tree_context_popover_window_rebuild_reproduction);
+    g_test_add_func("/app/context-popover/tab-window-rebuild-reproduction",
+                    test_tab_context_popover_window_rebuild_reproduction);
     return g_test_run();
 }

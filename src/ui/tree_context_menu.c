@@ -172,3 +172,40 @@ lmme_tree_context_menu_attach(LmmeApp *app)
     g_signal_connect(gesture, "pressed", G_CALLBACK(on_tree_right_click), app);
     gtk_widget_add_controller(app->tree_view, GTK_EVENT_CONTROLLER(gesture));
 }
+
+#ifdef LMME_TESTING
+
+static void
+on_test_tree_popover_finalized(gpointer user_data, GObject *where_the_object_was)
+{
+    gboolean *finalized = user_data;
+    (void)where_the_object_was;
+    *finalized = TRUE;
+}
+
+gboolean
+lmme_tree_context_menu_test_open(LmmeApp *app, gboolean *out_finalized)
+{
+    GtkWidget *popover = NULL;
+
+    if (app == NULL || app->root_box == NULL) {
+        return FALSE;
+    }
+    popover = get_tree_context_popover();
+    if (!GTK_IS_POPOVER(popover)) {
+        return FALSE;
+    }
+    if (out_finalized != NULL) {
+        *out_finalized = FALSE;
+        g_object_weak_ref(G_OBJECT(popover), on_test_tree_popover_finalized, out_finalized);
+    }
+    if (gtk_widget_get_parent(popover) != app->root_box) {
+        if (gtk_widget_get_parent(popover) != NULL) {
+            gtk_widget_unparent(popover);
+        }
+        gtk_widget_set_parent(popover, app->root_box);
+    }
+    return gtk_widget_get_parent(popover) == app->root_box;
+}
+
+#endif
