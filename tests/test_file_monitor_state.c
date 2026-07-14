@@ -1,6 +1,7 @@
 #include <glib.h>
 
 #include "app/app.h"
+#include "app/app_test.h"
 #include "document/file_monitor.h"
 #include "ui/external_conflict.h"
 
@@ -159,6 +160,32 @@ test_external_conflict_presenting_sets_pending(void)
     g_assert_cmpint(doc.external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_PRESENTING);
 }
 
+static void
+test_external_conflict_stale_idle_resets_state(void)
+{
+    LmmeApp app = {0};
+    LmmeDocument doc = {0};
+
+    app.documents = g_ptr_array_new();
+    doc.app = &app;
+    doc.id = 7;
+    doc.disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
+    g_ptr_array_add(app.documents, &doc);
+
+    lmme_external_conflict_request(&doc);
+    g_assert_cmpuint(doc.external_conflict_source_id, !=, 0);
+    g_assert_cmpint(doc.external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_SCHEDULED);
+
+    doc.disk_state = LMME_DISK_STATE_NORMAL;
+    g_assert_true(lmme_app_test_drain_main_context(64));
+
+    g_assert_cmpuint(doc.external_conflict_source_id, ==, 0);
+    g_assert_cmpint(doc.external_conflict_state, ==, LMME_EXTERNAL_CONFLICT_IDLE);
+    g_assert_false(doc.external_change_pending);
+
+    g_ptr_array_unref(app.documents);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -173,5 +200,7 @@ main(int argc, char **argv)
                     test_external_conflict_request_state_machine);
     g_test_add_func("/file-monitor/conflict/presenting-pending",
                     test_external_conflict_presenting_sets_pending);
+    g_test_add_func("/file-monitor/conflict/stale-idle-reset",
+                    test_external_conflict_stale_idle_resets_state);
     return g_test_run();
 }

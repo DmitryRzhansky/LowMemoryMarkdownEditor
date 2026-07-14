@@ -258,11 +258,17 @@ external_conflict_idle_cb(gpointer user_data)
     g_autoptr(GError) recovery_error = NULL;
 
     doc = lmme_tabs_find_by_id(data->app, data->document_id);
-    if (doc == NULL || !conflict_disk_state(doc)) {
+    if (doc == NULL) {
         return G_SOURCE_REMOVE;
     }
 
     doc->external_conflict_source_id = 0;
+    if (!conflict_disk_state(doc)) {
+        doc->external_conflict_state = LMME_EXTERNAL_CONFLICT_IDLE;
+        doc->external_change_pending = FALSE;
+        return G_SOURCE_REMOVE;
+    }
+
     doc->external_conflict_state = LMME_EXTERNAL_CONFLICT_PRESENTING;
 
     captured_generation = doc->external_change_generation;
