@@ -48,6 +48,8 @@ gboolean lmme_file_tree_test_snapshot_bound_row(GtkWidget *tree_view,
                                                 const char *path,
                                                 LmmeFileTreeTestRowSnapshot *snapshot);
 GtkWidget *lmme_file_tree_test_ref_bound_expander(GtkWidget *tree_view, const char *path);
+GObject *lmme_file_tree_test_ref_directory_monitor(GtkWidget *tree_view, const char *path);
+guint lmme_file_tree_test_monitor_timeout_id(GtkWidget *tree_view);
 #endif
 
 #endif

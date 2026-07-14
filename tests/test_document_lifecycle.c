@@ -19,6 +19,69 @@
 #include "ui/statusbar.h"
 #include "workspace/workspace.h"
 
+typedef struct {
+    guint events;
+} MonitorProbe;
+
+static void
+on_monitor_probe_changed(GFileMonitor *monitor,
+                         GFile *file,
+                         GFile *other_file,
+                         GFileMonitorEvent event_type,
+                         gpointer user_data)
+{
+    MonitorProbe *probe = user_data;
+    (void)monitor;
+    (void)file;
+    (void)other_file;
+    (void)event_type;
+    probe->events++;
+}
+
+static void
+on_monitor_finalized(gpointer user_data, GObject *where_the_object_was)
+{
+    gboolean *finalized = user_data;
+    (void)where_the_object_was;
+    *finalized = TRUE;
+}
+
+static gboolean
+wait_for_counter_change(const guint *counter, guint previous, guint timeout_ms)
+{
+    const gint64 deadline = g_get_monotonic_time() +
+                            ((gint64)timeout_ms * G_TIME_SPAN_MILLISECOND);
+
+    do {
+        while (g_main_context_pending(NULL)) {
+            g_main_context_iteration(NULL, FALSE);
+        }
+        if (*counter != previous) {
+            return TRUE;
+        }
+        g_usleep(1000);
+    } while (g_get_monotonic_time() < deadline);
+    return FALSE;
+}
+
+static gboolean
+wait_for_boolean(const gboolean *value, guint timeout_ms)
+{
+    const gint64 deadline = g_get_monotonic_time() +
+                            ((gint64)timeout_ms * G_TIME_SPAN_MILLISECOND);
+
+    do {
+        while (g_main_context_pending(NULL)) {
+            g_main_context_iteration(NULL, FALSE);
+        }
+        if (*value) {
+            return TRUE;
+        }
+        g_usleep(1000);
+    } while (g_get_monotonic_time() < deadline);
+    return FALSE;
+}
+
 static void
 remove_directory_contents(const char *directory)
 {
@@ -85,6 +148,115 @@ test_conflict_blocks_autosave(void)
     doc.disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
     lmme_document_schedule_autosave(&doc);
     g_assert_cmpuint(doc.autosave_id, ==, 0);
+}
+
+static void
+test_monitor_owner_teardown_cancels_pending_work(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-monitor-teardown-XXXXXX", NULL);
+    g_autofree char *cache = g_build_filename(root, "recovery", NULL);
+    g_autofree char *path = g_build_filename(root, "note.md", NULL);
+    LmmeApp app = {0};
+    LmmeDocument *doc = NULL;
+    gboolean monitor_finalized = FALSE;
+
+    g_assert_true(g_file_set_contents(path, "initial", -1, NULL));
+    app.workspace = lmme_workspace_new(root);
+    app.recovery_store = lmme_recovery_store_new(cache);
+    app.documents = g_ptr_array_new();
+    app.config.autosave = TRUE;
+    app.config.autosave_delay_ms = 60000;
+    doc = test_document_new(&app, path, "local");
+    doc->id = 1;
+    g_ptr_array_add(app.documents, doc);
+    lmme_document_file_monitor_attach(doc);
+    if (doc->monitor == NULL) {
+        g_test_skip("GFileMonitor backend is unavailable");
+        g_ptr_array_remove_index(app.documents, 0);
+        test_document_environment_clear(&app, doc, root, cache);
+        g_ptr_array_unref(app.documents);
+        return;
+    }
+    g_object_weak_ref(G_OBJECT(doc->monitor), on_monitor_finalized, &monitor_finalized);
+
+    lmme_document_schedule_autosave(doc);
+    lmme_document_schedule_recovery(doc);
+    doc->disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
+    lmme_external_conflict_request(doc);
+    g_assert_cmpuint(doc->autosave_id, !=, 0);
+    g_assert_cmpuint(doc->recovery_id, !=, 0);
+    g_assert_cmpuint(doc->external_conflict_source_id, !=, 0);
+
+    lmme_document_cancel_pending_work(doc);
+    g_assert_cmpuint(doc->autosave_id, ==, 0);
+    g_assert_cmpuint(doc->recovery_id, ==, 0);
+    g_assert_cmpuint(doc->external_conflict_source_id, ==, 0);
+    g_ptr_array_remove_index(app.documents, 0);
+    lmme_document_free(doc);
+    g_assert_true(wait_for_boolean(&monitor_finalized, 2000));
+
+    g_ptr_array_unref(app.documents);
+    lmme_recovery_store_free(app.recovery_store);
+    lmme_workspace_free(app.workspace);
+    remove_directory_contents(cache);
+    g_rmdir(cache);
+    g_unlink(path);
+    g_rmdir(root);
+}
+
+static void
+test_monitor_filesystem_race_after_owner_teardown(void)
+{
+    g_autofree char *root = g_dir_make_tmp("lmme-test-monitor-race-XXXXXX", NULL);
+    g_autofree char *path = g_build_filename(root, "note.md", NULL);
+    g_autoptr(GFile) directory = g_file_new_for_path(root);
+    g_autoptr(GFileMonitor) probe_monitor = NULL;
+    g_autoptr(GError) error = NULL;
+    MonitorProbe probe = {0};
+    LmmeApp app = {0};
+    guint exercised = 0;
+
+    g_assert_true(g_file_set_contents(path, "initial", -1, NULL));
+    probe_monitor = g_file_monitor_directory(directory, G_FILE_MONITOR_NONE, NULL, &error);
+    if (probe_monitor == NULL) {
+        g_test_skip("GFileMonitor directory backend is unavailable");
+        g_unlink(path);
+        g_rmdir(root);
+        return;
+    }
+    g_signal_connect(probe_monitor,
+                     "changed",
+                     G_CALLBACK(on_monitor_probe_changed),
+                     &probe);
+    app.workspace = lmme_workspace_new(root);
+
+    for (guint iteration = 0; iteration < 32; iteration++) {
+        g_autofree char *contents = g_strdup_printf("change-%u", iteration);
+        LmmeDocument *doc = test_document_new(&app, path, "local");
+        guint before = probe.events;
+
+        doc->id = iteration + 1;
+        lmme_document_file_monitor_attach(doc);
+        if (doc->monitor == NULL) {
+            lmme_document_free(doc);
+            continue;
+        }
+        g_assert_true(g_file_set_contents(path, contents, -1, NULL));
+        lmme_document_free(doc);
+        if (wait_for_counter_change(&probe.events, before, 500)) {
+            exercised++;
+        }
+    }
+
+    if (exercised == 0) {
+        g_test_skip("GFileMonitor backend produced no events during the bounded race probe");
+    } else {
+        g_test_message("filesystem race exercised in %u iterations", exercised);
+    }
+
+    lmme_workspace_free(app.workspace);
+    g_unlink(path);
+    g_rmdir(root);
 }
 
 typedef struct {
@@ -1243,6 +1415,10 @@ main(int argc, char **argv)
     g_test_add_func("/document/save-as/uncertain", test_save_as_uncertain_commit_switches_path_with_recovery);
     g_test_add_func("/document/overwrite/explicit-policy", test_overwrite_uses_explicit_conflict_policy);
     g_test_add_func("/document/conflict-blocks-autosave", test_conflict_blocks_autosave);
+    g_test_add_func("/document/monitor/owner-teardown",
+                    test_monitor_owner_teardown_cancels_pending_work);
+    g_test_add_func("/document/monitor/filesystem-race",
+                    test_monitor_filesystem_race_after_owner_teardown);
     g_test_add_func("/document/bulk-close/two-phase", test_bulk_close_prepare_is_all_or_nothing);
     g_test_add_func("/document/recovery/failure-retry", test_recovery_failure_state_and_retry);
     g_test_add_func("/document/recovery/stale-snapshot",

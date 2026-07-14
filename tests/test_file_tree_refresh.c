@@ -12,6 +12,85 @@
 
 static gboolean gtk_available = FALSE;
 
+typedef struct {
+    guint events;
+} DirectoryMonitorProbe;
+
+static void
+on_directory_probe_changed(GFileMonitor *monitor,
+                           GFile *file,
+                           GFile *other_file,
+                           GFileMonitorEvent event_type,
+                           gpointer user_data)
+{
+    DirectoryMonitorProbe *probe = user_data;
+    (void)monitor;
+    (void)file;
+    (void)other_file;
+    (void)event_type;
+    probe->events++;
+}
+
+static void
+on_tree_monitor_finalized(gpointer user_data, GObject *where_the_object_was)
+{
+    gboolean *finalized = user_data;
+    (void)where_the_object_was;
+    *finalized = TRUE;
+}
+
+static void
+iterate_main_context_for(guint timeout_ms)
+{
+    const gint64 deadline = g_get_monotonic_time() +
+                            ((gint64)timeout_ms * G_TIME_SPAN_MILLISECOND);
+
+    do {
+        while (g_main_context_pending(NULL)) {
+            g_main_context_iteration(NULL, FALSE);
+        }
+        g_usleep(1000);
+    } while (g_get_monotonic_time() < deadline);
+}
+
+static gboolean
+wait_for_tree_monitor_finalized(const gboolean *finalized, guint timeout_ms)
+{
+    const gint64 deadline = g_get_monotonic_time() +
+                            ((gint64)timeout_ms * G_TIME_SPAN_MILLISECOND);
+
+    do {
+        while (g_main_context_pending(NULL)) {
+            g_main_context_iteration(NULL, FALSE);
+        }
+        if (*finalized) {
+            return TRUE;
+        }
+        g_usleep(1000);
+    } while (g_get_monotonic_time() < deadline);
+    return FALSE;
+}
+
+static gboolean
+wait_for_directory_event(const DirectoryMonitorProbe *probe,
+                         guint previous,
+                         guint timeout_ms)
+{
+    const gint64 deadline = g_get_monotonic_time() +
+                            ((gint64)timeout_ms * G_TIME_SPAN_MILLISECOND);
+
+    do {
+        while (g_main_context_pending(NULL)) {
+            g_main_context_iteration(NULL, FALSE);
+        }
+        if (probe->events != previous) {
+            return TRUE;
+        }
+        g_usleep(1000);
+    } while (g_get_monotonic_time() < deadline);
+    return FALSE;
+}
+
 static gboolean
 wait_for_bound_row(GtkWidget *tree_view,
                    const char *path,
@@ -111,6 +190,134 @@ test_factory_bind_unbind_metadata(void)
     lmme_path_context_clear(&app.tree_context);
     g_unlink(note);
     g_rmdir(root);
+}
+
+static void
+test_directory_monitor_owner_teardown(void)
+{
+    g_autofree char *root = NULL;
+    g_autofree char *event_path = NULL;
+    g_autoptr(GFile) event_file = NULL;
+    LmmeApp app = {0};
+    GObject *monitor = NULL;
+    gboolean monitor_finalized = FALSE;
+
+    if (!gtk_available) {
+        g_test_skip("GTK display backend is unavailable");
+        return;
+    }
+
+    root = g_dir_make_tmp("lmme-test-tree-monitor-teardown-XXXXXX", NULL);
+    event_path = g_build_filename(root, "event.md", NULL);
+    event_file = g_file_new_for_path(event_path);
+    app.workspace = lmme_workspace_new_scanned(root, TRUE, TRUE, NULL);
+    app.tree_view = lmme_file_tree_create(&app);
+    lmme_file_tree_populate(app.tree_view, app.workspace, TRUE, TRUE);
+    monitor = lmme_file_tree_test_ref_directory_monitor(app.tree_view, root);
+    if (!G_IS_FILE_MONITOR(monitor)) {
+        g_clear_object(&monitor);
+        g_test_skip("GFileMonitor directory backend is unavailable");
+        g_object_ref_sink(app.tree_view);
+        g_object_unref(app.tree_view);
+        lmme_workspace_free(app.workspace);
+        g_rmdir(root);
+        return;
+    }
+    g_object_weak_ref(monitor, on_tree_monitor_finalized, &monitor_finalized);
+    g_signal_emit_by_name(monitor,
+                          "changed",
+                          event_file,
+                          NULL,
+                          G_FILE_MONITOR_EVENT_CREATED);
+    g_assert_cmpuint(lmme_file_tree_test_monitor_timeout_id(app.tree_view), !=, 0);
+    g_object_unref(monitor);
+
+    lmme_file_tree_populate(app.tree_view, NULL, TRUE, TRUE);
+    g_assert_true(wait_for_tree_monitor_finalized(&monitor_finalized, 2000));
+    iterate_main_context_for(300);
+
+    lmme_file_tree_populate(app.tree_view, app.workspace, TRUE, TRUE);
+    g_assert_nonnull(lmme_file_tree_model_identity(app.tree_view));
+    g_assert_cmpuint(lmme_file_tree_monitor_count(app.tree_view), ==, 1);
+
+    lmme_file_tree_populate(app.tree_view, NULL, TRUE, TRUE);
+    g_object_ref_sink(app.tree_view);
+    g_object_unref(app.tree_view);
+    app.tree_view = NULL;
+    lmme_workspace_free(app.workspace);
+    lmme_path_context_clear(&app.selection);
+    lmme_path_context_clear(&app.tree_context);
+    g_rmdir(root);
+}
+
+static void
+test_directory_monitor_filesystem_race(void)
+{
+    g_autofree char *root = NULL;
+    g_autofree char *event_path = NULL;
+    g_autoptr(GFile) directory = NULL;
+    g_autoptr(GFileMonitor) probe_monitor = NULL;
+    g_autoptr(GError) error = NULL;
+    DirectoryMonitorProbe probe = {0};
+    LmmeApp app = {0};
+    GObject *target_monitor = NULL;
+    gboolean target_finalized = FALSE;
+    gboolean backend_exercised = FALSE;
+
+    if (!gtk_available) {
+        g_test_skip("GTK display backend is unavailable");
+        return;
+    }
+
+    root = g_dir_make_tmp("lmme-test-tree-monitor-race-XXXXXX", NULL);
+    event_path = g_build_filename(root, "event.md", NULL);
+    directory = g_file_new_for_path(root);
+    probe_monitor = g_file_monitor_directory(directory, G_FILE_MONITOR_NONE, NULL, &error);
+    if (probe_monitor == NULL) {
+        g_test_skip("GFileMonitor directory backend is unavailable");
+        g_rmdir(root);
+        return;
+    }
+    g_signal_connect(probe_monitor,
+                     "changed",
+                     G_CALLBACK(on_directory_probe_changed),
+                     &probe);
+
+    app.workspace = lmme_workspace_new_scanned(root, TRUE, TRUE, NULL);
+    app.tree_view = lmme_file_tree_create(&app);
+    lmme_file_tree_populate(app.tree_view, app.workspace, TRUE, TRUE);
+    target_monitor = lmme_file_tree_test_ref_directory_monitor(app.tree_view, root);
+    g_assert_true(G_IS_FILE_MONITOR(target_monitor));
+    g_object_weak_ref(target_monitor, on_tree_monitor_finalized, &target_finalized);
+    g_object_unref(target_monitor);
+
+    g_assert_true(g_file_set_contents(event_path, "event", -1, NULL));
+    lmme_file_tree_populate(app.tree_view, NULL, TRUE, TRUE);
+    backend_exercised = wait_for_directory_event(&probe, 0, 2000);
+    g_assert_true(wait_for_tree_monitor_finalized(&target_finalized, 2000));
+
+    g_assert_true(lmme_workspace_refresh_directory(app.workspace,
+                                                   root,
+                                                   TRUE,
+                                                   TRUE,
+                                                   NULL));
+    lmme_file_tree_populate(app.tree_view, app.workspace, TRUE, TRUE);
+    g_assert_true(lmme_file_tree_select_path(app.tree_view, event_path));
+
+    lmme_file_tree_populate(app.tree_view, NULL, TRUE, TRUE);
+    g_object_ref_sink(app.tree_view);
+    g_object_unref(app.tree_view);
+    app.tree_view = NULL;
+    g_file_monitor_cancel(probe_monitor);
+    lmme_workspace_free(app.workspace);
+    lmme_path_context_clear(&app.selection);
+    lmme_path_context_clear(&app.tree_context);
+    g_unlink(event_path);
+    g_rmdir(root);
+
+    if (!backend_exercised) {
+        g_test_skip("GFileMonitor backend produced no event during the bounded race probe");
+    }
 }
 
 static void
@@ -323,6 +530,10 @@ main(int argc, char **argv)
     gtk_available = gtk_init_check();
     g_test_add_func("/file-tree/factory/bind-unbind-metadata",
                     test_factory_bind_unbind_metadata);
+    g_test_add_func("/file-tree/monitor/owner-teardown",
+                    test_directory_monitor_owner_teardown);
+    g_test_add_func("/file-tree/monitor/filesystem-race",
+                    test_directory_monitor_filesystem_race);
     g_test_add_func("/file-tree/refresh/cached-nested-row",
                     test_create_child_model_after_ancestor_refresh);
     g_test_add_func("/file-tree/refresh/load-error-null-model",

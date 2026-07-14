@@ -1004,4 +1004,27 @@ lmme_file_tree_test_ref_bound_expander(GtkWidget *tree_view, const char *path)
     return expander != NULL ? g_object_ref(expander) : NULL;
 }
 
+GObject *
+lmme_file_tree_test_ref_directory_monitor(GtkWidget *tree_view, const char *path)
+{
+    LmmeFileTreeState *state = tree_view != NULL
+                                 ? g_object_get_data(G_OBJECT(tree_view), state_key)
+                                 : NULL;
+    GObject *monitor = state != NULL && path != NULL
+                         ? g_hash_table_lookup(state->directory_monitors, path)
+                         : NULL;
+
+    return monitor != NULL ? g_object_ref(monitor) : NULL;
+}
+
+guint
+lmme_file_tree_test_monitor_timeout_id(GtkWidget *tree_view)
+{
+    LmmeFileTreeState *state = tree_view != NULL
+                                 ? g_object_get_data(G_OBJECT(tree_view), state_key)
+                                 : NULL;
+
+    return state != NULL ? state->monitor_timeout_id : 0;
+}
+
 #endif
