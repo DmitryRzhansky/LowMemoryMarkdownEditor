@@ -476,8 +476,9 @@ on_session_test_shutdown(GApplication *application, gpointer user_data)
 }
 
 static void
-on_session_test_activate(GtkApplication *gtk_app, gpointer user_data)
+on_session_test_activate(GApplication *application, gpointer user_data)
 {
+    GtkApplication *gtk_app = GTK_APPLICATION(application);
     SessionRunContext *ctx = user_data;
 
     ctx->app->gtk_app = gtk_app;

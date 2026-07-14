@@ -63,8 +63,9 @@ static void lmme_app_cancel_pending_work(LmmeApp *app);
 static void lmme_app_destroy_runtime_ui(LmmeApp *app);
 
 static void
-on_activate(GtkApplication *gtk_app, gpointer user_data)
+on_activate(GApplication *application, gpointer user_data)
 {
+    GtkApplication *gtk_app = GTK_APPLICATION(application);
     LmmeApp *app = user_data;
     app->gtk_app = gtk_app;
 
