@@ -648,7 +648,7 @@ run_context_popover_rebuild_child(ContextPopoverTestOpenFunc open_popover,
 }
 
 static void
-test_tree_context_popover_window_rebuild_reproduction(void)
+test_tree_context_popover_window_rebuild(void)
 {
     if (g_test_subprocess()) {
         g_log_set_always_fatal(G_LOG_FATAL_MASK |
@@ -661,11 +661,11 @@ test_tree_context_popover_window_rebuild_reproduction(void)
 
     g_test_trap_subprocess(NULL, 5 * G_TIME_SPAN_SECOND, G_TEST_SUBPROCESS_DEFAULT);
     g_test_trap_assert_stdout("*tree-popover-finalized*");
-    g_test_trap_assert_failed();
+    g_test_trap_assert_passed();
 }
 
 static void
-test_tab_context_popover_window_rebuild_reproduction(void)
+test_tab_context_popover_window_rebuild(void)
 {
     if (g_test_subprocess()) {
         g_log_set_always_fatal(G_LOG_FATAL_MASK |
@@ -678,7 +678,7 @@ test_tab_context_popover_window_rebuild_reproduction(void)
 
     g_test_trap_subprocess(NULL, 5 * G_TIME_SPAN_SECOND, G_TEST_SUBPROCESS_DEFAULT);
     g_test_trap_assert_stdout("*tab-popover-finalized*");
-    g_test_trap_assert_failed();
+    g_test_trap_assert_passed();
 }
 
 int
@@ -703,9 +703,9 @@ main(int argc, char **argv)
     g_test_add_func("/app/session/serialization", test_session_serialization);
     g_test_add_func("/app/session/shutdown-signal", test_session_shutdown_signal);
     g_test_add_func("/app/image-async/survives-app-teardown", test_image_async_survives_app_teardown);
-    g_test_add_func("/app/context-popover/tree-window-rebuild-reproduction",
-                    test_tree_context_popover_window_rebuild_reproduction);
-    g_test_add_func("/app/context-popover/tab-window-rebuild-reproduction",
-                    test_tab_context_popover_window_rebuild_reproduction);
+    g_test_add_func("/app/context-popover/tree-window-rebuild",
+                    test_tree_context_popover_window_rebuild);
+    g_test_add_func("/app/context-popover/tab-window-rebuild",
+                    test_tab_context_popover_window_rebuild);
     return g_test_run();
 }

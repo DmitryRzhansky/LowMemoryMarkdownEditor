@@ -44,6 +44,8 @@ get_tab_context_popover(void)
 {
     if (tab_context_popover == NULL) {
         tab_context_popover = gtk_popover_menu_new_from_model(get_tab_context_menu_model());
+        g_object_add_weak_pointer(G_OBJECT(tab_context_popover),
+                                  (gpointer *)&tab_context_popover);
         gtk_popover_set_has_arrow(GTK_POPOVER(tab_context_popover), FALSE);
         gtk_popover_set_autohide(GTK_POPOVER(tab_context_popover), TRUE);
     }

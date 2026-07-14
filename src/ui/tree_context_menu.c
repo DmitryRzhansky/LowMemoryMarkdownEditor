@@ -109,6 +109,8 @@ get_tree_context_popover(void)
     if (tree_context_popover == NULL) {
         g_autoptr(GMenu) empty_menu = g_menu_new();
         tree_context_popover = gtk_popover_menu_new_from_model(G_MENU_MODEL(empty_menu));
+        g_object_add_weak_pointer(G_OBJECT(tree_context_popover),
+                                  (gpointer *)&tree_context_popover);
         gtk_popover_set_has_arrow(GTK_POPOVER(tree_context_popover), FALSE);
         gtk_popover_set_autohide(GTK_POPOVER(tree_context_popover), TRUE);
     }
