@@ -1,5 +1,7 @@
 # LowMemoryMarkdownEditor
 
+<img src="image.png" alt="LMME logo" width="320">
+
 Small Linux-only GTK Markdown editor focused on low memory usage and local folders.
 
 ## What it does
@@ -20,7 +22,7 @@ Small Linux-only GTK Markdown editor focused on low memory usage and local folde
 - uses lightweight system GTK symbolic icons for toolbar, tabs, and file tree
 - provides a right-click context menu for workspace file tree actions
 - scans workspace directories lazily as they are expanded
-- uses a compact light-gray GTK theme
+- uses a compact native dark GTK interface
 - stores basic config in `~/.config/lmme/config.ini`
 
 ## What it does not do
