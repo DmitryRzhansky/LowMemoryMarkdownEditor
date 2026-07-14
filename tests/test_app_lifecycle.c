@@ -126,6 +126,26 @@ on_view_weak_notify(gpointer data, GObject *where_the_object_was)
 }
 
 static void
+assert_widget_refs_cleared(const LmmeApp *app)
+{
+    g_assert_null(app->window);
+    g_assert_null(app->root_box);
+    g_assert_null(app->menu_bar);
+    g_assert_null(app->toolbar);
+    g_assert_null(app->notebook);
+    g_assert_null(app->tree_view);
+    g_assert_null(app->status_label);
+    g_assert_null(app->breadcrumbs_label);
+    g_assert_null(app->main_paned);
+    g_assert_null(app->sidebar);
+    g_assert_null(app->right_box);
+    g_assert_null(app->search_bar);
+    g_assert_null(app->find_entry);
+    g_assert_null(app->replace_entry);
+    g_assert_null(app->replace_button);
+}
+
+static void
 test_command_refresh_deduplicates(void)
 {
     GtkApplication *gtk_app = NULL;
@@ -237,10 +257,17 @@ test_teardown_window_before_app_state(void)
     g_object_weak_ref(G_OBJECT(doc->scroller), on_view_weak_notify, &tracker);
 
     g_assert_nonnull(app->window);
-    test_full_app_teardown(app, gtk_app);
+    gtk_window_destroy(GTK_WINDOW(app->window));
+    g_assert_true(drain_main_context(64));
 
+    assert_widget_refs_cleared(app);
+    g_assert_false(app->shutdown_in_progress);
+    g_assert_false(app->scheduling_blocked);
+    g_assert_cmpuint(app->documents->len, ==, 1);
     g_assert_true(tracker.view_destroy_notified);
     g_assert_true(tracker.document_alive_on_view_destroy);
+
+    test_full_app_teardown(app, gtk_app);
 }
 
 static void

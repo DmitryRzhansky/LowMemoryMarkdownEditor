@@ -78,11 +78,11 @@ on_window_close_request(GtkWindow *window, gpointer user_data)
 }
 
 static void
-on_window_destroy(GtkWindow *window, gpointer user_data)
+on_window_destroy(GtkWidget *widget, gpointer user_data)
 {
     LmmeApp *app = user_data;
 
-    if (app != NULL && app->window == GTK_WIDGET(window)) {
+    if (app != NULL && app->window == widget) {
         lmme_app_clear_widget_refs(app);
     }
 }
