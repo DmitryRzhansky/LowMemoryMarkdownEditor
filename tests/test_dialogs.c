@@ -44,6 +44,18 @@ find_widget_with_css_class(GtkWidget *widget, const char *css_class)
     return NULL;
 }
 
+static void
+assert_dialog_buttons_are_styled(GtkWidget *widget)
+{
+    if (GTK_IS_BUTTON(widget)) {
+        g_assert_true(gtk_widget_has_css_class(widget, "dialog-action"));
+    }
+    for (GtkWidget *child = gtk_widget_get_first_child(widget); child != NULL;
+         child = gtk_widget_get_next_sibling(child)) {
+        assert_dialog_buttons_are_styled(child);
+    }
+}
+
 static gboolean
 inspect_and_activate_dialog(gpointer user_data)
 {
@@ -65,6 +77,7 @@ inspect_and_activate_dialog(gpointer user_data)
         g_assert_nonnull(find_widget_with_css_class(widget, "dialog-root"));
         g_assert_nonnull(find_widget_with_css_class(widget, "dialog-content"));
         g_assert_nonnull(find_widget_with_css_class(widget, "dialog-actions"));
+        assert_dialog_buttons_are_styled(widget);
         for (guint j = 0; j < check->destructive_count; j++) {
             GtkWidget *button = find_button_with_label(widget, check->destructive_labels[j]);
             g_assert_nonnull(button);

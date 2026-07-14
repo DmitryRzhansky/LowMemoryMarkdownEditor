@@ -75,6 +75,7 @@ static GtkWidget *
 dialog_add_button(DialogShell *shell, const char *label, int response)
 {
     GtkWidget *button = gtk_button_new_with_label(label);
+    gtk_widget_add_css_class(button, "dialog-action");
     g_object_set_data(G_OBJECT(button), dialog_response_key, GINT_TO_POINTER(response));
     g_signal_connect(button, "clicked", G_CALLBACK(on_response_button_clicked), NULL);
     gtk_box_append(GTK_BOX(shell->buttons), button);

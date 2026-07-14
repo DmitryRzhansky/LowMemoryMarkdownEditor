@@ -74,7 +74,7 @@
 .editor-tabs .tab-close:focus,
 .app-menu menubutton > button:focus,
 popover.menu modelbutton:focus,
-window.dialog button:focus,
+window.lmme-dialog button.dialog-action:focus,
 window.dialog entry:focus {
   outline: 2px solid #8ba7c4;
   outline-offset: -2px;
@@ -385,47 +385,66 @@ window.dialog label {
   color: #e3e6ea;
 }
 
-window.dialog button {
+window.lmme-dialog button.dialog-action {
   padding: 5px 9px;
   background-color: #34383f;
+  background-image: none;
   color: #e5e8ec;
   border: 1px solid #4c525c;
   border-radius: 4px;
+  box-shadow: none;
 }
 
-window.dialog button:hover {
+window.lmme-dialog button.dialog-action label {
+  color: #e5e8ec;
+}
+
+window.lmme-dialog button.dialog-action:hover {
   background-color: #40454e;
   border-color: #5a626e;
 }
 
-window.dialog button:active {
+window.lmme-dialog button.dialog-action:active {
   background-color: #272a2f;
 }
 
-window.dialog button:disabled {
+window.lmme-dialog button.dialog-action:disabled {
+  background-color: #292c31;
   color: #777d86;
   border-color: #393d44;
 }
 
-window.dialog button.destructive-action {
+window.lmme-dialog button.dialog-action:disabled label {
+  color: #777d86;
+}
+
+window.lmme-dialog button.dialog-action.destructive-action {
   background-color: #6a3036;
   color: #ffffff;
   border-color: #9a4851;
 }
 
-window.dialog button.destructive-action:hover {
+window.lmme-dialog button.dialog-action.destructive-action label {
+  color: #ffffff;
+}
+
+window.lmme-dialog button.dialog-action.destructive-action:hover {
   background-color: #7d3940;
   border-color: #b05a63;
 }
 
-window.dialog button.destructive-action:active {
+window.lmme-dialog button.dialog-action.destructive-action:active {
   background-color: #55262b;
 }
 
-window.dialog button.destructive-action:disabled {
+window.lmme-dialog button.dialog-action.destructive-action:disabled {
   background-color: #473034;
   color: #9c8588;
   border-color: #5b3b40;
+}
+
+window.lmme-dialog button.dialog-action.destructive-action:disabled label {
+  color: #9c8588;
 }
 
 tooltip.background {
