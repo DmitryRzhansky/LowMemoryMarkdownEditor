@@ -11,7 +11,9 @@ External file monitor callbacks no longer open modal dialogs directly.
 - `GFileMonitor` callback decides disk state, updates fingerprints, and calls `lmme_external_conflict_request()`.
 - UI presentation is deferred through `g_idle_add_full` in `src/ui/external_conflict.c`.
 - State machine: `LmmeExternalConflictState` (`IDLE`, `SCHEDULED`, `PRESENTING`) plus `external_change_generation` and `external_change_pending`.
-- Idle handler clears `external_conflict_source_id` and sets `PRESENTING` before showing the dialog.
+- The pending idle source is owned by its `LmmeDocument`; `SCHEDULED` means that `external_conflict_source_id` identifies an active source.
+- After resolving the document by ID, the idle handler clears `external_conflict_source_id` before checking whether the conflict is still current.
+- If the conflict disappeared before dispatch, the handler returns the document to `IDLE` and clears `external_change_pending`; otherwise it sets `PRESENTING` before showing the dialog.
 - `lmme_document_apply_external_conflict_choice()` is the test seam for reload/overwrite/keep-local without GTK.
 - `Ctrl+S` routes through the conflict request path only when `disk_state != LMME_DISK_STATE_NORMAL`.
 
