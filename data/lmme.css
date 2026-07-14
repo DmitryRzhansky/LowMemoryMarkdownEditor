@@ -300,6 +300,18 @@ window.dialog entry selection {
   padding: 5px 8px;
 }
 
+.statusbar.status-warning {
+  background-color: #332f27;
+  color: #e3bf76;
+  border-top-color: #6f5a31;
+}
+
+.statusbar.status-error {
+  background-color: #38272a;
+  color: #f0a0a0;
+  border-top-color: #7a3f46;
+}
+
 popover.menu > contents {
   padding: 3px;
   background-color: #2b2e33;

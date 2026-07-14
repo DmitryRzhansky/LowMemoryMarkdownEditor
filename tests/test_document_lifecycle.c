@@ -238,6 +238,109 @@ test_recovery_failure_is_independent_of_document_state(void)
 }
 
 static void
+test_statusbar_document_severity(void)
+{
+    LmmeDocument doc = {0};
+
+    g_assert_cmpint(lmme_statusbar_document_severity(NULL),
+                    ==,
+                    LMME_STATUS_SEVERITY_NORMAL);
+    doc.save_state = LMME_SAVE_STATE_SAVED;
+    g_assert_cmpint(lmme_statusbar_document_severity(&doc),
+                    ==,
+                    LMME_STATUS_SEVERITY_NORMAL);
+    doc.save_state = LMME_SAVE_STATE_MODIFIED;
+    g_assert_cmpint(lmme_statusbar_document_severity(&doc),
+                    ==,
+                    LMME_STATUS_SEVERITY_NORMAL);
+    doc.save_state = LMME_SAVE_STATE_AUTOSAVED;
+    g_assert_cmpint(lmme_statusbar_document_severity(&doc),
+                    ==,
+                    LMME_STATUS_SEVERITY_NORMAL);
+
+    doc.disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
+    g_assert_cmpint(lmme_statusbar_document_severity(&doc),
+                    ==,
+                    LMME_STATUS_SEVERITY_WARNING);
+    doc.disk_state = LMME_DISK_STATE_NORMAL;
+    doc.recovery_cleanup_failed = TRUE;
+    g_assert_cmpint(lmme_statusbar_document_severity(&doc),
+                    ==,
+                    LMME_STATUS_SEVERITY_WARNING);
+
+    doc.recovery_cleanup_failed = FALSE;
+    doc.disk_state = LMME_DISK_STATE_EXTERNAL_DELETED;
+    g_assert_cmpint(lmme_statusbar_document_severity(&doc),
+                    ==,
+                    LMME_STATUS_SEVERITY_ERROR);
+    doc.disk_state = LMME_DISK_STATE_NORMAL;
+    doc.save_state = LMME_SAVE_STATE_ERROR;
+    g_assert_cmpint(lmme_statusbar_document_severity(&doc),
+                    ==,
+                    LMME_STATUS_SEVERITY_ERROR);
+    doc.save_state = LMME_SAVE_STATE_SAVED;
+    doc.recovery_failed = TRUE;
+    g_assert_cmpint(lmme_statusbar_document_severity(&doc),
+                    ==,
+                    LMME_STATUS_SEVERITY_ERROR);
+
+    doc.disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
+    g_assert_cmpint(lmme_statusbar_document_severity(&doc),
+                    ==,
+                    LMME_STATUS_SEVERITY_ERROR);
+}
+
+static void
+test_statusbar_severity_classes(void)
+{
+    LmmeApp app = {0};
+    LmmeDocument doc = {0};
+
+    gtk_init();
+    app.status_label = gtk_label_new("");
+    app.notebook = gtk_notebook_new();
+    app.documents = g_ptr_array_new();
+    app.workspace = lmme_workspace_new(g_get_tmp_dir());
+    g_object_ref_sink(app.status_label);
+    g_object_ref_sink(app.notebook);
+
+    doc.app = &app;
+    doc.relative_path = g_strdup("note.md");
+    doc.buffer = gtk_source_buffer_new(NULL);
+    doc.scroller = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    doc.save_state = LMME_SAVE_STATE_SAVED;
+    doc.disk_state = LMME_DISK_STATE_EXTERNAL_CHANGED;
+    gtk_notebook_append_page(GTK_NOTEBOOK(app.notebook), doc.scroller, NULL);
+    g_ptr_array_add(app.documents, &doc);
+
+    lmme_statusbar_update(&app);
+    g_assert_true(gtk_widget_has_css_class(app.status_label, "status-warning"));
+    g_assert_false(gtk_widget_has_css_class(app.status_label, "status-error"));
+
+    doc.recovery_failed = TRUE;
+    lmme_statusbar_update(&app);
+    g_assert_false(gtk_widget_has_css_class(app.status_label, "status-warning"));
+    g_assert_true(gtk_widget_has_css_class(app.status_label, "status-error"));
+
+    doc.disk_state = LMME_DISK_STATE_NORMAL;
+    doc.recovery_failed = FALSE;
+    lmme_statusbar_update(&app);
+    g_assert_false(gtk_widget_has_css_class(app.status_label, "status-warning"));
+    g_assert_false(gtk_widget_has_css_class(app.status_label, "status-error"));
+
+    lmme_statusbar_set_error(&app, "Explicit error");
+    g_assert_false(gtk_widget_has_css_class(app.status_label, "status-warning"));
+    g_assert_true(gtk_widget_has_css_class(app.status_label, "status-error"));
+
+    g_clear_object(&doc.buffer);
+    g_clear_pointer(&doc.relative_path, g_free);
+    g_clear_pointer(&app.documents, g_ptr_array_unref);
+    g_clear_pointer(&app.workspace, lmme_workspace_free);
+    g_clear_object(&app.notebook);
+    g_clear_object(&app.status_label);
+}
+
+static void
 test_discard_close_disposition_is_committed_explicitly(void)
 {
     g_autofree char *root = g_dir_make_tmp("lmme-test-document-close-discard-XXXXXX", NULL);
@@ -1142,6 +1245,8 @@ main(int argc, char **argv)
                     test_stale_recovery_snapshot_does_not_clear_failure);
     g_test_add_func("/document/recovery/composite-state",
                     test_recovery_failure_is_independent_of_document_state);
+    g_test_add_func("/document/statusbar/severity", test_statusbar_document_severity);
+    g_test_add_func("/document/statusbar/severity-classes", test_statusbar_severity_classes);
     g_test_add_func("/document/close/discard-commit",
                     test_discard_close_disposition_is_committed_explicitly);
     g_test_add_func("/document/close/discard-failure",

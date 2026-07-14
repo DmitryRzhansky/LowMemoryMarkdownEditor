@@ -6,6 +6,58 @@
 #include "editor/editor.h"
 #include "workspace/workspace.h"
 
+LmmeStatusSeverity
+lmme_statusbar_document_severity(const LmmeDocument *doc)
+{
+    if (doc == NULL) {
+        return LMME_STATUS_SEVERITY_NORMAL;
+    }
+    if (doc->save_state == LMME_SAVE_STATE_ERROR || doc->recovery_failed ||
+        doc->disk_state == LMME_DISK_STATE_EXTERNAL_DELETED) {
+        return LMME_STATUS_SEVERITY_ERROR;
+    }
+    if (doc->disk_state == LMME_DISK_STATE_EXTERNAL_CHANGED ||
+        doc->recovery_cleanup_failed) {
+        return LMME_STATUS_SEVERITY_WARNING;
+    }
+    return LMME_STATUS_SEVERITY_NORMAL;
+}
+
+static void
+statusbar_apply_severity(GtkWidget *label, LmmeStatusSeverity severity)
+{
+    gboolean has_warning = gtk_widget_has_css_class(label, "status-warning");
+    gboolean has_error = gtk_widget_has_css_class(label, "status-error");
+
+    switch (severity) {
+    case LMME_STATUS_SEVERITY_WARNING:
+        if (has_error) {
+            gtk_widget_remove_css_class(label, "status-error");
+        }
+        if (!has_warning) {
+            gtk_widget_add_css_class(label, "status-warning");
+        }
+        break;
+    case LMME_STATUS_SEVERITY_ERROR:
+        if (has_warning) {
+            gtk_widget_remove_css_class(label, "status-warning");
+        }
+        if (!has_error) {
+            gtk_widget_add_css_class(label, "status-error");
+        }
+        break;
+    case LMME_STATUS_SEVERITY_NORMAL:
+    default:
+        if (has_warning) {
+            gtk_widget_remove_css_class(label, "status-warning");
+        }
+        if (has_error) {
+            gtk_widget_remove_css_class(label, "status-error");
+        }
+        break;
+    }
+}
+
 char *
 lmme_statusbar_format_document(const LmmeDocument *doc,
                                int line,
@@ -51,6 +103,7 @@ lmme_statusbar_update(LmmeApp *app)
         return;
     }
     LmmeDocument *doc = lmme_tabs_get_active(app);
+    statusbar_apply_severity(app->status_label, lmme_statusbar_document_severity(doc));
 
     if (app->workspace == NULL) {
         gtk_label_set_text(GTK_LABEL(app->status_label), "No workspace opened");
@@ -81,5 +134,6 @@ lmme_statusbar_set_error(LmmeApp *app, const char *message)
     if (app == NULL || app->status_label == NULL) {
         return;
     }
+    statusbar_apply_severity(app->status_label, LMME_STATUS_SEVERITY_ERROR);
     gtk_label_set_text(GTK_LABEL(app->status_label), message != NULL ? message : "Error");
 }
