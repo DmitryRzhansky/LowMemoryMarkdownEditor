@@ -578,6 +578,96 @@ test_table_preview_api_lifecycle(void)
     g_assert_cmpstr(after, ==, before);
 }
 
+static GtkTextTag *
+required_tag(GtkTextTagTable *table, const char *name)
+{
+    GtkTextTag *tag = gtk_text_tag_table_lookup(table, name);
+
+    g_assert_nonnull(tag);
+    return tag;
+}
+
+static void
+assert_tag_color_is_dark(GtkTextTag *tag, const char *property_name)
+{
+    g_autoptr(GdkRGBA) rgba = NULL;
+
+    g_object_get(tag, property_name, &rgba, NULL);
+    g_assert_nonnull(rgba);
+    g_assert_cmpfloat(MAX(rgba->red, MAX(rgba->green, rgba->blue)), <, 0.45);
+}
+
+static void
+assert_tag_color_differs(GtkTextTag *tag, const char *property_name, const char *old_color)
+{
+    g_autoptr(GdkRGBA) actual = NULL;
+    GdkRGBA old_rgba = {0};
+
+    g_object_get(tag, property_name, &actual, NULL);
+    g_assert_nonnull(actual);
+    g_assert_true(gdk_rgba_parse(&old_rgba, old_color));
+    g_assert_false(gdk_rgba_equal(actual, &old_rgba));
+}
+
+static void
+test_preview_dark_tag_properties(void)
+{
+    static const double heading_scales[] = {1.65, 1.45, 1.25, 1.10, 1.00, 1.00};
+    g_autoptr(GtkSourceBuffer) buffer = gtk_source_buffer_new(NULL);
+    GtkTextTagTable *table = gtk_text_buffer_get_tag_table(GTK_TEXT_BUFFER(buffer));
+    GtkTextTag *tag = NULL;
+    g_autofree char *family = NULL;
+    int initial_tag_count = 0;
+    gboolean invisible = FALSE;
+
+    lmme_preview_ensure_tags(GTK_TEXT_BUFFER(buffer));
+    initial_tag_count = gtk_text_tag_table_get_size(table);
+
+    tag = required_tag(table, "lmme-preview-table-header-row");
+    assert_tag_color_differs(tag, "paragraph-background-rgba", "#c7cdd2");
+    assert_tag_color_is_dark(tag, "paragraph-background-rgba");
+
+    tag = required_tag(table, "lmme-preview-table-separator-row");
+    assert_tag_color_is_dark(tag, "paragraph-background-rgba");
+
+    tag = required_tag(table, "lmme-preview-table-body-row");
+    assert_tag_color_differs(tag, "paragraph-background-rgba", "#d0d5d9");
+    assert_tag_color_is_dark(tag, "paragraph-background-rgba");
+
+    tag = required_tag(table, "lmme-preview-hidden-marker");
+    g_object_get(tag, "invisible", &invisible, NULL);
+    g_assert_true(invisible);
+
+    tag = required_tag(table, "lmme-preview-frontmatter");
+    invisible = FALSE;
+    g_object_get(tag, "invisible", &invisible, NULL);
+    g_assert_true(invisible);
+
+    tag = required_tag(table, "lmme-preview-inline-code");
+    g_object_get(tag, "family", &family, NULL);
+    g_assert_cmpstr(family, ==, "monospace");
+    g_clear_pointer(&family, g_free);
+    tag = required_tag(table, "lmme-preview-code-block");
+    g_object_get(tag, "family", &family, NULL);
+    g_assert_cmpstr(family, ==, "monospace");
+
+    for (guint i = 0; i < G_N_ELEMENTS(heading_scales); i++) {
+        g_autofree char *name = g_strdup_printf("lmme-preview-heading-%u", i + 1);
+        int weight = 0;
+        double scale = 0.0;
+
+        tag = required_tag(table, name);
+        g_object_get(tag, "weight", &weight, "scale", &scale, NULL);
+        g_assert_cmpint(weight, ==, PANGO_WEIGHT_BOLD);
+        g_assert_cmpfloat(scale, ==, heading_scales[i]);
+    }
+
+    tag = required_tag(table, "lmme-preview-table-header-row");
+    lmme_preview_ensure_tags(GTK_TEXT_BUFFER(buffer));
+    g_assert_cmpint(gtk_text_tag_table_get_size(table), ==, initial_tag_count);
+    g_assert_true(tag == required_tag(table, "lmme-preview-table-header-row"));
+}
+
 int
 main(int argc, char **argv)
 {
@@ -618,5 +708,6 @@ main(int argc, char **argv)
     g_test_add_func("/preview-style/table/unclosed-backtick", test_table_unclosed_backtick);
     g_test_add_func("/preview-style/table/user-real-world", test_table_user_real_world_alignment);
     g_test_add_func("/preview-style/table/preview-api-lifecycle", test_table_preview_api_lifecycle);
+    g_test_add_func("/preview-style/tags/dark-properties", test_preview_dark_tag_properties);
     return g_test_run();
 }

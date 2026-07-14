@@ -161,18 +161,18 @@ lmme_preview_ensure_tags(GtkTextBuffer *buffer)
                           "family",
                           "monospace",
                           "background",
-                          "#2b2f34",
+                          "#30353b",
                           "foreground",
-                          "#e2e6ea",
+                          "#e7eaee",
                           NULL);
     create_tag_if_missing(buffer,
                           "lmme-preview-code-block",
                           "family",
                           "monospace",
                           "background",
-                          "#252a30",
+                          "#272c32",
                           "foreground",
-                          "#e2e6ea",
+                          "#e7eaee",
                           "left-margin",
                           18,
                           "right-margin",
@@ -181,7 +181,7 @@ lmme_preview_ensure_tags(GtkTextBuffer *buffer)
     create_tag_if_missing(buffer,
                           "lmme-preview-blockquote",
                           "foreground",
-                          "#4d5962",
+                          "#aab4be",
                           "left-margin",
                           18,
                           "style",
@@ -190,36 +190,36 @@ lmme_preview_ensure_tags(GtkTextBuffer *buffer)
     create_tag_if_missing(buffer,
                           "lmme-preview-list-marker",
                           "foreground",
-                          "#6f7782",
+                          "#9aa6b2",
                           "weight",
                           PANGO_WEIGHT_BOLD,
                           NULL);
     create_tag_if_missing(buffer,
                           "lmme-preview-task-marker",
                           "foreground",
-                          "#6f7782",
+                          "#9aa6b2",
                           "weight",
                           PANGO_WEIGHT_BOLD,
                           NULL);
     create_tag_if_missing(buffer,
                           "lmme-preview-link-text",
                           "foreground",
-                          "#315f8a",
+                          "#78a9d1",
                           "underline",
                           PANGO_UNDERLINE_SINGLE,
                           NULL);
-    create_tag_if_missing(buffer, "lmme-preview-link-url", "foreground", "#6f7782", NULL);
+    create_tag_if_missing(buffer, "lmme-preview-link-url", "foreground", "#89939e", NULL);
     create_tag_if_missing(buffer,
                           "lmme-preview-image",
                           "foreground",
-                          "#315f8a",
+                          "#78a9d1",
                           "style",
                           PANGO_STYLE_ITALIC,
                           NULL);
     create_tag_if_missing(buffer,
                           "lmme-preview-hr",
                           "foreground",
-                          "#6f7782",
+                          "#89939e",
                           "weight",
                           PANGO_WEIGHT_BOLD,
                           NULL);
@@ -228,7 +228,7 @@ lmme_preview_ensure_tags(GtkTextBuffer *buffer)
                           "invisible",
                           TRUE,
                           "foreground",
-                          "#6f7782",
+                          "#89939e",
                           NULL);
     create_tag_if_missing(buffer, "lmme-preview-table", "left-margin", 10, "right-margin", 10, NULL);
     create_tag_if_missing(buffer,
@@ -236,7 +236,7 @@ lmme_preview_ensure_tags(GtkTextBuffer *buffer)
                           "weight",
                           PANGO_WEIGHT_BOLD,
                           "paragraph-background",
-                          "#c7cdd2",
+                          "#303942",
                           "pixels-above-lines",
                           4,
                           "pixels-below-lines",
@@ -245,9 +245,9 @@ lmme_preview_ensure_tags(GtkTextBuffer *buffer)
     create_tag_if_missing(buffer,
                           "lmme-preview-table-separator-row",
                           "foreground",
-                          "#7f8992",
+                          "#84919c",
                           "paragraph-background",
-                          "#c7cdd2",
+                          "#303942",
                           "pixels-above-lines",
                           0,
                           "pixels-below-lines",
@@ -256,15 +256,15 @@ lmme_preview_ensure_tags(GtkTextBuffer *buffer)
     create_tag_if_missing(buffer,
                           "lmme-preview-table-body-row",
                           "paragraph-background",
-                          "#d0d5d9",
+                          "#292f35",
                           "pixels-above-lines",
                           1,
                           "pixels-below-lines",
                           1,
                           NULL);
     create_tag_if_missing(buffer, "lmme-preview-hidden-marker", "invisible", TRUE, NULL);
-    create_tag_if_missing(buffer, "lmme-preview-dim-marker", "foreground", "#6f7782", NULL);
-    create_tag_if_missing(buffer, active_marker_tag_name, "foreground", "#6f7782", NULL);
+    create_tag_if_missing(buffer, "lmme-preview-dim-marker", "foreground", "#747e89", NULL);
+    create_tag_if_missing(buffer, active_marker_tag_name, "foreground", "#a7b0ba", NULL);
 }
 
 void
