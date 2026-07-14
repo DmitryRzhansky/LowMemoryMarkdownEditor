@@ -254,8 +254,9 @@ list_item_get_tree_expander(GtkListItem *list_item)
 }
 
 static void
-factory_setup(GtkSignalListItemFactory *factory, GtkListItem *list_item, gpointer user_data)
+factory_setup(GtkSignalListItemFactory *factory, GObject *object, gpointer user_data)
 {
+    GtkListItem *list_item = GTK_LIST_ITEM(object);
     GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     GtkWidget *leading = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     GtkWidget *expander = gtk_tree_expander_new();
@@ -284,8 +285,9 @@ factory_setup(GtkSignalListItemFactory *factory, GtkListItem *list_item, gpointe
 }
 
 static void
-factory_bind(GtkSignalListItemFactory *factory, GtkListItem *list_item, gpointer user_data)
+factory_bind(GtkSignalListItemFactory *factory, GObject *object, gpointer user_data)
 {
+    GtkListItem *list_item = GTK_LIST_ITEM(object);
     GtkTreeListRow *row = gtk_list_item_get_item(list_item);
     g_autoptr(LmmeTreeItem) item = row != NULL ? gtk_tree_list_row_get_item(row) : NULL;
     GtkWidget *expander = list_item_get_tree_expander(list_item);
@@ -308,8 +310,9 @@ factory_bind(GtkSignalListItemFactory *factory, GtkListItem *list_item, gpointer
 }
 
 static void
-factory_unbind(GtkSignalListItemFactory *factory, GtkListItem *list_item, gpointer user_data)
+factory_unbind(GtkSignalListItemFactory *factory, GObject *object, gpointer user_data)
 {
+    GtkListItem *list_item = GTK_LIST_ITEM(object);
     GtkWidget *expander = list_item_get_tree_expander(list_item);
     (void)factory;
     (void)user_data;
@@ -906,3 +909,99 @@ lmme_file_tree_test_refresh_count(LmmeFileTreeTestModel *model, const char *path
 {
     return file_tree_test_refresh_count(model != NULL ? model->state : NULL, path);
 }
+
+#ifdef LMME_TESTING
+
+static GtkWidget *
+find_bound_expander(GtkWidget *widget, const char *path)
+{
+    const char *bound_path = NULL;
+
+    if (GTK_IS_TREE_EXPANDER(widget)) {
+        bound_path = g_object_get_data(G_OBJECT(widget), row_path_key);
+        if (g_strcmp0(bound_path, path) == 0) {
+            return widget;
+        }
+    }
+    for (GtkWidget *child = gtk_widget_get_first_child(widget); child != NULL;
+         child = gtk_widget_get_next_sibling(child)) {
+        GtkWidget *match = find_bound_expander(child, path);
+
+        if (match != NULL) {
+            return match;
+        }
+    }
+    return NULL;
+}
+
+void
+lmme_file_tree_test_row_snapshot_clear(LmmeFileTreeTestRowSnapshot *snapshot)
+{
+    if (snapshot == NULL) {
+        return;
+    }
+    g_clear_pointer(&snapshot->path, g_free);
+    g_clear_pointer(&snapshot->label, g_free);
+    g_clear_pointer(&snapshot->icon_name, g_free);
+    snapshot->has_list_row = FALSE;
+    snapshot->has_icon = FALSE;
+    snapshot->has_label = FALSE;
+    snapshot->kind = 0;
+    snapshot->position = 0;
+}
+
+gboolean
+lmme_file_tree_test_snapshot_expander(GtkWidget *expander,
+                                      LmmeFileTreeTestRowSnapshot *snapshot)
+{
+    GtkWidget *icon = NULL;
+    GtkWidget *label = NULL;
+    const char *path = NULL;
+
+    if (!GTK_IS_TREE_EXPANDER(expander) || snapshot == NULL) {
+        return FALSE;
+    }
+    lmme_file_tree_test_row_snapshot_clear(snapshot);
+    icon = g_object_get_data(G_OBJECT(expander), "lmme-tree-icon");
+    label = g_object_get_data(G_OBJECT(expander), "lmme-tree-label");
+    path = g_object_get_data(G_OBJECT(expander), row_path_key);
+    snapshot->has_list_row = gtk_tree_expander_get_list_row(GTK_TREE_EXPANDER(expander)) != NULL;
+    snapshot->has_icon = GTK_IS_IMAGE(icon);
+    snapshot->has_label = GTK_IS_LABEL(label);
+    snapshot->path = g_strdup(path);
+    snapshot->kind = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(expander), row_kind_key));
+    snapshot->position = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(expander), row_position_key));
+    if (snapshot->has_label) {
+        snapshot->label = g_strdup(gtk_label_get_text(GTK_LABEL(label)));
+    }
+    if (snapshot->has_icon) {
+        snapshot->icon_name = g_strdup(gtk_image_get_icon_name(GTK_IMAGE(icon)));
+    }
+    return TRUE;
+}
+
+gboolean
+lmme_file_tree_test_snapshot_bound_row(GtkWidget *tree_view,
+                                       const char *path,
+                                       LmmeFileTreeTestRowSnapshot *snapshot)
+{
+    GtkWidget *expander = NULL;
+
+    if (tree_view == NULL || path == NULL || snapshot == NULL) {
+        return FALSE;
+    }
+    expander = find_bound_expander(tree_view, path);
+    return expander != NULL && lmme_file_tree_test_snapshot_expander(expander, snapshot);
+}
+
+GtkWidget *
+lmme_file_tree_test_ref_bound_expander(GtkWidget *tree_view, const char *path)
+{
+    GtkWidget *expander = tree_view != NULL && path != NULL
+                            ? find_bound_expander(tree_view, path)
+                            : NULL;
+
+    return expander != NULL ? g_object_ref(expander) : NULL;
+}
+
+#endif

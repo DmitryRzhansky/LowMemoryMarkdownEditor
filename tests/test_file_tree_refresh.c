@@ -10,6 +10,109 @@
 #include "ui/file_tree_view_test.h"
 #include "workspace/workspace.h"
 
+static gboolean gtk_available = FALSE;
+
+static gboolean
+wait_for_bound_row(GtkWidget *tree_view,
+                   const char *path,
+                   LmmeFileTreeTestRowSnapshot *snapshot)
+{
+    const gint64 deadline = g_get_monotonic_time() + (2 * G_TIME_SPAN_SECOND);
+
+    do {
+        if (lmme_file_tree_test_snapshot_bound_row(tree_view, path, snapshot)) {
+            return TRUE;
+        }
+        while (g_main_context_pending(NULL)) {
+            g_main_context_iteration(NULL, FALSE);
+        }
+        g_usleep(1000);
+    } while (g_get_monotonic_time() < deadline);
+    return FALSE;
+}
+
+static gboolean
+wait_for_unbound_expander(GtkWidget *expander,
+                          LmmeFileTreeTestRowSnapshot *snapshot)
+{
+    const gint64 deadline = g_get_monotonic_time() + (2 * G_TIME_SPAN_SECOND);
+
+    do {
+        if (lmme_file_tree_test_snapshot_expander(expander, snapshot) &&
+            !snapshot->has_list_row && snapshot->path == NULL &&
+            snapshot->kind == 0 && snapshot->position == 0) {
+            return TRUE;
+        }
+        while (g_main_context_pending(NULL)) {
+            g_main_context_iteration(NULL, FALSE);
+        }
+        g_usleep(1000);
+    } while (g_get_monotonic_time() < deadline);
+    return FALSE;
+}
+
+static void
+test_factory_bind_unbind_metadata(void)
+{
+    g_autofree char *root = NULL;
+    g_autofree char *note = NULL;
+    LmmeFileTreeTestRowSnapshot snapshot = {0};
+    LmmeApp app = {0};
+    GtkWidget *window = NULL;
+    GtkWidget *expander = NULL;
+
+    if (!gtk_available) {
+        g_test_skip("GTK display backend is unavailable");
+        return;
+    }
+
+    root = g_dir_make_tmp("lmme-test-tree-factory-XXXXXX", NULL);
+    note = g_build_filename(root, "note.md", NULL);
+    g_assert_true(g_file_set_contents(note, "# note\n", -1, NULL));
+    app.workspace = lmme_workspace_new_scanned(root, TRUE, TRUE, NULL);
+    g_assert_nonnull(app.workspace);
+
+    window = gtk_window_new();
+    gtk_window_set_default_size(GTK_WINDOW(window), 480, 320);
+    app.tree_view = lmme_file_tree_create(&app);
+    gtk_window_set_child(GTK_WINDOW(window), app.tree_view);
+    lmme_file_tree_populate(app.tree_view, app.workspace, TRUE, TRUE);
+    gtk_window_present(GTK_WINDOW(window));
+
+    g_assert_true(wait_for_bound_row(app.tree_view, note, &snapshot));
+    g_assert_true(snapshot.has_list_row);
+    g_assert_true(snapshot.has_icon);
+    g_assert_true(snapshot.has_label);
+    g_assert_cmpstr(snapshot.path, ==, note);
+    g_assert_cmpint(snapshot.kind, ==, LMME_FILE_KIND_MARKDOWN);
+    g_assert_cmpuint(snapshot.position, >, 0);
+    g_assert_cmpstr(snapshot.label, ==, "note.md");
+    g_assert_cmpstr(snapshot.icon_name, ==, "text-x-markdown-symbolic");
+    expander = lmme_file_tree_test_ref_bound_expander(app.tree_view, note);
+    g_assert_nonnull(expander);
+
+    lmme_file_tree_populate(app.tree_view, NULL, TRUE, TRUE);
+    g_assert_true(wait_for_unbound_expander(expander, &snapshot));
+    g_assert_true(snapshot.has_icon);
+    g_assert_true(snapshot.has_label);
+
+    lmme_file_tree_populate(app.tree_view, app.workspace, TRUE, TRUE);
+    g_assert_true(wait_for_bound_row(app.tree_view, note, &snapshot));
+    g_assert_cmpstr(snapshot.path, ==, note);
+    g_assert_cmpint(snapshot.kind, ==, LMME_FILE_KIND_MARKDOWN);
+    g_assert_cmpstr(snapshot.label, ==, "note.md");
+
+    lmme_file_tree_test_row_snapshot_clear(&snapshot);
+    g_object_unref(expander);
+    gtk_window_destroy(GTK_WINDOW(window));
+    app.tree_view = NULL;
+    lmme_workspace_free(app.workspace);
+    lmme_path_context_clear(&app.selection);
+    lmme_path_context_clear(&app.tree_context);
+    g_unlink(note);
+    g_rmdir(root);
+}
+
 static void
 test_create_child_model_after_ancestor_refresh(void)
 {
@@ -216,6 +319,10 @@ int
 main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
+    g_setenv("GTK_A11Y", "none", TRUE);
+    gtk_available = gtk_init_check();
+    g_test_add_func("/file-tree/factory/bind-unbind-metadata",
+                    test_factory_bind_unbind_metadata);
     g_test_add_func("/file-tree/refresh/cached-nested-row",
                     test_create_child_model_after_ancestor_refresh);
     g_test_add_func("/file-tree/refresh/load-error-null-model",

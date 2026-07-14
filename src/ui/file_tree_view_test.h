@@ -7,6 +7,19 @@ typedef struct _LmmeApp LmmeApp;
 typedef struct _LmmeWorkspace LmmeWorkspace;
 typedef struct _LmmeFileTreeTestModel LmmeFileTreeTestModel;
 
+#ifdef LMME_TESTING
+typedef struct {
+    gboolean has_list_row;
+    gboolean has_icon;
+    gboolean has_label;
+    char *path;
+    int kind;
+    guint position;
+    char *label;
+    char *icon_name;
+} LmmeFileTreeTestRowSnapshot;
+#endif
+
 /* Test-only accessors for retaining the exact cached row/store across refresh. */
 LmmeFileTreeTestModel *lmme_file_tree_test_model_new(LmmeApp *app,
                                                      LmmeWorkspace *workspace,
@@ -26,5 +39,15 @@ GListModel *lmme_file_tree_test_create_child_model(LmmeFileTreeTestModel *model,
 char *lmme_file_tree_test_dup_item_path(GObject *item);
 gboolean lmme_file_tree_test_has_monitor(LmmeFileTreeTestModel *model, const char *path);
 guint lmme_file_tree_test_refresh_count(LmmeFileTreeTestModel *model, const char *path);
+
+#ifdef LMME_TESTING
+void lmme_file_tree_test_row_snapshot_clear(LmmeFileTreeTestRowSnapshot *snapshot);
+gboolean lmme_file_tree_test_snapshot_expander(GtkWidget *expander,
+                                               LmmeFileTreeTestRowSnapshot *snapshot);
+gboolean lmme_file_tree_test_snapshot_bound_row(GtkWidget *tree_view,
+                                                const char *path,
+                                                LmmeFileTreeTestRowSnapshot *snapshot);
+GtkWidget *lmme_file_tree_test_ref_bound_expander(GtkWidget *tree_view, const char *path);
+#endif
 
 #endif
